@@ -12,19 +12,23 @@ API_KEY = os.getenv("REDMINE_API_KEY")
 BASE_URL = os.getenv("REDMINE_BASE_URL")
 
 
-async def set_time(session, url, headers, iid, uid, day):
+async def set_time(session, url, headers, iid, uid, day, hours, activity_id, comments):
     body = f"""
 <time_entry>
   <issue_id>{iid}</issue_id>
   <user_id>{uid}</user_id>
   <spent_on>{day.isoformat()}</spent_on>
-  <hours>8</hours>
-  <activity_id>9</activity_id>
-  <comments>development</comments>
+  <hours>{hours}</hours>
+  <activity_id>{activity_id}</activity_id>
+  <comments>{comments}</comments>
 </time_entry>
 """.strip()
     async with session.post(url, headers=headers, data=body) as response:
-        await response.text()
+        text = await response.text()
+        if 200 <= response.status < 300:
+            print(f"OK: {day}")
+        else:
+            print(f"ERROR: {day} {response.status} {text}")
 
 def get_times(base_url, headers, iid, uid):
     params = {
@@ -50,14 +54,24 @@ def get_times(base_url, headers, iid, uid):
     return spent_on_dates
 
 async def main():
+    # Usage: python fill_redmine_dev_task.py <iid> <uid> [exclude_dates] [hours] [activity_id] [comments]
     if len(sys.argv) < 3:
-        print("Usage: python fill_redmine_dev_task.py <iid> <uid> [exclude_dates]")
+        print("Usage: python fill_redmine_dev_task.py <iid> <uid> [exclude_dates] [hours] [activity_id] [comments]")
         sys.exit(1)
     iid = sys.argv[1]
     uid = sys.argv[2]
     exclude = set()
+    hours = "8"
+    activity_id = "11"
+    comments = "development"
     if len(sys.argv) > 3:
         exclude = set(d.strip() for d in sys.argv[3].split(",") if d.strip())
+    if len(sys.argv) > 4:
+        hours = sys.argv[4]
+    if len(sys.argv) > 5:
+        activity_id = sys.argv[5]
+    if len(sys.argv) > 6:
+        comments = sys.argv[6]
 
     base_url = BASE_URL
     url = f"{base_url}/time_entries.xml"
@@ -76,7 +90,6 @@ async def main():
 
     spent_on_dates = get_times(base_url, headers, iid, uid)
 
-    tasks = []
     async with aiohttp.ClientSession() as session:
         current_day = first_day
         tasks = []
@@ -87,7 +100,7 @@ async def main():
                 and day_str not in exclude
                 and day_str not in spent_on_dates
             ):
-                tasks.append(set_time(session, url, headers, iid, uid, current_day))
+                tasks.append(set_time(session, url, headers, iid, uid, current_day, hours, activity_id, comments))
             current_day += timedelta(days=1)
         await asyncio.gather(*tasks)
 
