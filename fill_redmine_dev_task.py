@@ -10,6 +10,10 @@ import os
 load_dotenv()
 API_KEY = os.getenv("REDMINE_API_KEY")
 BASE_URL = os.getenv("REDMINE_BASE_URL")
+USER_ID = os.getenv("USER_ID")
+USSUE_ID = os.getenv("USSUE_ID")
+COMMENT = os.getenv("COMMENT")
+ACTIVITY_ID = os.getenv("ACTIVITY_ID")
 
 
 async def set_time(session, url, headers, iid, uid, day, hours, activity_id, comments):
@@ -54,16 +58,12 @@ def get_times(base_url, headers, iid, uid):
     return spent_on_dates
 
 async def main():
-    # Usage: python fill_redmine_dev_task.py <iid> <uid> [exclude_dates] [hours] [activity_id] [comments]
-    if len(sys.argv) < 3:
-        print("Usage: python fill_redmine_dev_task.py <iid> <uid> [exclude_dates] [hours] [activity_id] [comments]")
-        sys.exit(1)
-    iid = sys.argv[1]
-    uid = sys.argv[2]
+    iid = USSUE_ID
+    uid = USER_ID
     exclude = set()
-    hours = "8"
-    activity_id = "11"
-    comments = "development"
+    hours = 8
+    activity_id = ACTIVITY_ID
+    comments = COMMENT
     if len(sys.argv) > 3:
         exclude = set(d.strip() for d in sys.argv[3].split(",") if d.strip())
     if len(sys.argv) > 4:
@@ -89,6 +89,34 @@ async def main():
     last_day = next_month - timedelta(days=1)
 
     spent_on_dates = get_times(base_url, headers, iid, uid)
+
+    print(spent_on_dates)
+
+    # Calculate affected dates
+    affected_dates = []
+    current_day = first_day
+    while current_day <= last_day:
+        day_str = current_day.isoformat()
+        if (
+            current_day.weekday() < 5
+            and day_str not in exclude
+            and day_str not in spent_on_dates
+        ):
+            affected_dates.append(day_str)
+        current_day += timedelta(days=1)
+
+    # Display information about affected dates
+    print("The following dates will be affected:")
+    for date_str in affected_dates:
+        print(f"- {date_str}")
+    print(f"Hours: {hours}")
+    print(f"Comment: {comments}")
+
+    # Ask for user confirmation
+    proceed = input("Do you want to continue? (y/n): ").strip().lower()
+    if proceed != "y":
+        print("Script execution stopped by the user.")
+        return
 
     async with aiohttp.ClientSession() as session:
         current_day = first_day
