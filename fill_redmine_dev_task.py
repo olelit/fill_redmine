@@ -50,9 +50,8 @@ async def update_redmine_activity(uid: int, iid: int, comment: str, activity_id:
     print("The following dates will be affected:")
     for date_str in affected_dates:
         print(f"- {date_str}")
-    print(f"Hours: {hours}")
     print(f"Comment: {comment}")
-    print(f"All hours: {affected_dates.__len__() * hours}")
+    print(f"Total hours: {affected_dates.__len__() * hours}")
 
     proceed = input("Do you want to continue? (y/n): ").strip().lower()
     if proceed != "y":
