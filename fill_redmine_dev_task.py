@@ -52,6 +52,7 @@ async def update_redmine_activity(uid: int, iid: int, comment: str, activity_id:
         print(f"- {date_str}")
     print(f"Hours: {hours}")
     print(f"Comment: {comment}")
+    print(f"All hours: {affected_dates.__len__() * hours}")
 
     proceed = input("Do you want to continue? (y/n): ").strip().lower()
     if proceed != "y":
@@ -116,8 +117,8 @@ def get_times(base_url, headers, iid, uid):
 async def main():
     i: int = 1
     while True:
-        iid = os.getenv(f"USSUE_ID_{i}")
-
+        iid = os.getenv(f"ISSUE_ID_{i}")
+  
         if iid is None:
             break
 
@@ -125,7 +126,8 @@ async def main():
         comment = os.getenv(f"COMMENT_{i}")
         activity_id = os.getenv(f"ACTIVITY_ID_{i}")
         api_key = os.getenv(f"REDMINE_API_KEY_{i}")
-        update_redmine_activity(uid, iid, comment, activity_id, api_key)
+        i += 1
+        await update_redmine_activity(uid, iid, comment, activity_id, api_key)
 
 
 
