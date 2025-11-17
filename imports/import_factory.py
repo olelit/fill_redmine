@@ -6,8 +6,6 @@ from imports.base_importer import BaseImporter
 from imports.manual_import import ManualImporter
 from imports.youtrack_import import YoutrackImporter
 
-load_dotenv()
-
 MANUAL = 'manual'
 YOUTRACK = 'youtrack'
 

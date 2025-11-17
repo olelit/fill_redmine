@@ -1,13 +1,11 @@
+import asyncio
 import os
 from abc import ABC, abstractmethod
 
 import aiohttp
 
-from fill_redmin_from import REDMINE_URL
-
 
 class BaseImporter(ABC):
-    REDMINE_URL = os.getenv("REDMINE_BASE_URL")
 
     def __init__(self, postfix: int):
         self.postfix = postfix
@@ -27,7 +25,8 @@ class BaseImporter(ABC):
         pass
 
     async def update_redmine_activity(self, uid: int, iid: int, comment: str, activity_id: int, api_key: str, records):
-        url = f"{REDMINE_URL}/time_entries.xml"
+        redmine_url = os.getenv('REDMINE_BASE_URL')
+        url = f"{redmine_url}/time_entries.xml"
         headers = {
             "Content-Type": "application/xml",
             "X-Redmine-API-Key": api_key

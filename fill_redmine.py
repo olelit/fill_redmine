@@ -1,10 +1,13 @@
 import asyncio
 
+from dotenv import load_dotenv
+
 from imports.import_factory import create_importer
 
 
 async def main():
     i: int = 1
+    load_dotenv()
     while True:
         importer = create_importer(i)
         await importer.run()
