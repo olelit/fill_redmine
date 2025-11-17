@@ -1,8 +1,11 @@
 import asyncio
 import os
 from abc import ABC, abstractmethod
+from typing import List
 
 import aiohttp
+
+from dto.date_hours_dto import DateHoursDTO
 
 
 class BaseImporter(ABC):
@@ -11,20 +14,20 @@ class BaseImporter(ABC):
         self.postfix = postfix
 
     @abstractmethod
-    def create_record_list(self):
+    def create_record_list(self) -> List[DateHoursDTO]:
         pass
 
     async def run(self):
         records = self.create_record_list()
-        iid = os.getenv(f"ISSUE_ID_{self.postfix}")
-        uid = os.getenv(f"USER_ID_{self.postfix}")
+        iid = int(os.getenv(f"ISSUE_ID_{self.postfix}"))
+        uid = int(os.getenv(f"USER_ID_{self.postfix}"))
         comment = os.getenv(f"COMMENT_{self.postfix}")
-        activity_id = os.getenv(f"ACTIVITY_ID_{self.postfix}")
+        activity_id = int(os.getenv(f"ACTIVITY_ID_{self.postfix}"))
         api_key = os.getenv(f"REDMINE_API_KEY_{self.postfix}")
         await self.update_redmine_activity(uid, iid, comment, activity_id, api_key, records)
         pass
 
-    async def update_redmine_activity(self, uid: int, iid: int, comment: str, activity_id: int, api_key: str, records):
+    async def update_redmine_activity(self, uid: int, iid: int, comment: str, activity_id: int, api_key: str, records: List[DateHoursDTO]):
         redmine_url = os.getenv('REDMINE_BASE_URL')
         url = f"{redmine_url}/time_entries.xml"
         headers = {
@@ -34,9 +37,9 @@ class BaseImporter(ABC):
 
         print("The following dates will be affected:")
         hour_sum = 0
-        for date in records:
-            hours = records[date]
-            print(f"{date} - {hours}h")
+        for dateHourDTO in records:
+            hours = dateHourDTO.hours
+            print(f"{dateHourDTO.date} - {hours}h")
             hour_sum += hours
         print(f"Comment: {comment}")
         print(f"Total hours: {hour_sum}")
@@ -50,7 +53,7 @@ class BaseImporter(ABC):
             tasks = []
 
             for date in records:
-                tasks.append(self.set(session, url, headers, iid, uid, date, records[date], activity_id, comment))
+                tasks.append(self.set_time(session, url, headers, iid, uid, date, records[date], activity_id, comment))
             await asyncio.gather(*tasks)
 
     async def set_time(self, session, url, headers, iid, uid, day, hours, activity_id, comments):

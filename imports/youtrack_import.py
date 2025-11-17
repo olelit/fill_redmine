@@ -1,15 +1,16 @@
 import os
 from datetime import datetime, timedelta
+from typing import List
 
 import requests
 
+from dto.date_hours_dto import DateHoursDTO
 from imports.base_importer import BaseImporter
 
 
 class YoutrackImporter(BaseImporter):
-    YOUTRACK_BASE_URL = os.getenv("YOUTRACK_BASE_URL")
 
-    def create_record_list(self):
+    def create_record_list(self) -> List[DateHoursDTO]:
         youtrack_url = os.getenv("YOUTRACK_BASE_URL")
         youtrack_token = os.getenv(f"YOUTRACK_ACCESS_TOKEN_{self.postfix}")
         now = datetime.now()
@@ -48,4 +49,9 @@ class YoutrackImporter(BaseImporter):
                 result[date] = 0
 
             result[date] += item['duration']['minutes'] / 60
-        return result
+
+        dto_list: list[DateHoursDTO] = [
+            DateHoursDTO(date=d, hours=h) for d, h in result.items()
+        ]
+
+        return dto_list
