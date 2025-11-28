@@ -9,7 +9,6 @@ async def main():
     load_dotenv()
     while True:
         source = os.getenv(f"SOURCE_{i}")
-
         if source is None:
             print('End of source. Exiting.')
             break

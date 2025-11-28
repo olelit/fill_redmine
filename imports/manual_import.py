@@ -37,7 +37,7 @@ class ManualImporter(BaseImporter):
         api_key = os.getenv(f"REDMINE_API_KEY_{self.postfix}")
         uid = os.getenv(f"USER_ID_{self.postfix}")
         iid = os.getenv(f"ISSUE_ID_{self.postfix}")
-        redmine_url = os.getenv("REDMINE_URL")
+        redmine_url = os.getenv("REDMINE_BASE_URL")
 
         params = {
             "user_id": uid,

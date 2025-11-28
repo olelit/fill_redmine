@@ -10,7 +10,7 @@ MANUAL = 'manual'
 YOUTRACK = 'youtrack'
 
 def create_importer(postfix : int) -> BaseImporter | None:
-    source = os.getenv('SOURCE')
+    source = os.getenv(f"SOURCE_{postfix}")
 
     if source == MANUAL:
         return ManualImporter(postfix)
