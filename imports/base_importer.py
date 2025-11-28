@@ -1,10 +1,10 @@
 import asyncio
-import os
 from abc import ABC, abstractmethod
 from typing import List
 
 import aiohttp
 
+from configs.config import Config
 from dto.date_hours_dto import DateHoursDTO
 
 
@@ -19,16 +19,17 @@ class BaseImporter(ABC):
 
     async def run(self):
         records = self.create_record_list()
-        iid = int(os.getenv(f"ISSUE_ID_{self.postfix}"))
-        uid = int(os.getenv(f"USER_ID_{self.postfix}"))
-        comment = os.getenv(f"COMMENT_{self.postfix}")
-        activity_id = int(os.getenv(f"ACTIVITY_ID_{self.postfix}"))
-        api_key = os.getenv(f"REDMINE_API_KEY_{self.postfix}")
+        iterable_dto = Config.get_iterable_import_env(self.postfix)
+        iid = iterable_dto.issue_id
+        uid = iterable_dto.user_id
+        comment = iterable_dto.comment
+        activity_id = iterable_dto.activity_id
+        api_key = iterable_dto.redmine_api_key
         await self.update_redmine_activity(uid, iid, comment, activity_id, api_key, records)
         pass
 
     async def update_redmine_activity(self, uid: int, iid: int, comment: str, activity_id: int, api_key: str, records: List[DateHoursDTO]):
-        redmine_url = os.getenv('REDMINE_BASE_URL')
+        redmine_url = Config.get_redmine_base_url()
         url = f"{redmine_url}/time_entries.xml"
         headers = {
             "Content-Type": "application/xml",
