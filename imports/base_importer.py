@@ -52,8 +52,8 @@ class BaseImporter(ABC):
         async with aiohttp.ClientSession() as session:
             tasks = []
 
-            for date in records:
-                tasks.append(self.set_time(session, url, headers, iid, uid, date, records[date], activity_id, comment))
+            for dateHourDTO in records:
+                    tasks.append(self.set_time(session, url, headers, iid, uid, dateHourDTO.date, dateHourDTO.hours, activity_id, comment))
             await asyncio.gather(*tasks)
 
     async def set_time(self, session, url, headers, iid, uid, day, hours, activity_id, comments):
@@ -61,7 +61,7 @@ class BaseImporter(ABC):
     <time_entry>
       <issue_id>{iid}</issue_id>
       <user_id>{uid}</user_id>
-      <spent_on>{day.isoformat()}</spent_on>
+      <spent_on>{day}</spent_on>
       <hours>{hours}</hours>
       <activity_id>{activity_id}</activity_id>
       <comments>{comments}</comments>
