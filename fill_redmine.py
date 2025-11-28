@@ -6,7 +6,7 @@ from imports.import_factory import create_importer
 
 async def main():
     i: int = 1
-    load_dotenv()
+
     while True:
         source = os.getenv(f"SOURCE_{i}")
         if source is None:

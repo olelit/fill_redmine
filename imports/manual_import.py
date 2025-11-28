@@ -1,15 +1,16 @@
 import calendar
-import os
 from datetime import date, timedelta
 import xml.etree.ElementTree as et
 import requests
+
+from configs.config import Config
 from dto.date_hours_dto import DateHoursDTO
 from imports.base_importer import BaseImporter
 
 
 class ManualImporter(BaseImporter):
     def create_record_list(self) -> list[DateHoursDTO]:
-        exclude_dates = os.getenv(f"EXCLUDE_DATES_{self.postfix}").split(",")
+        exclude_dates = Config.get_iterable_import_env(self.postfix).exclude_dates.split(",")
         start_day = date.today().replace(day=1)
         last_day = calendar.monthrange(start_day.year, start_day.month)[1]
         last_day = start_day.replace(day=last_day)
@@ -33,11 +34,11 @@ class ManualImporter(BaseImporter):
         return records
 
     def get_times(self):
-
-        api_key = os.getenv(f"REDMINE_API_KEY_{self.postfix}")
-        uid = os.getenv(f"USER_ID_{self.postfix}")
-        iid = os.getenv(f"ISSUE_ID_{self.postfix}")
-        redmine_url = os.getenv("REDMINE_BASE_URL")
+        iterable_dto = Config.get_iterable_import_env(self.postfix)
+        iid = iterable_dto.issue_id
+        uid = iterable_dto.user_id
+        api_key = iterable_dto.redmine_api_key
+        redmine_url = Config.get_redmine_base_url()
 
         params = {
             "user_id": uid,

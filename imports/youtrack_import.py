@@ -1,9 +1,7 @@
-import os
+import requests
 from datetime import datetime, timedelta
 from typing import List
-
-import requests
-
+from configs.config import Config
 from dto.date_hours_dto import DateHoursDTO
 from imports.base_importer import BaseImporter
 
@@ -11,8 +9,9 @@ from imports.base_importer import BaseImporter
 class YoutrackImporter(BaseImporter):
 
     def create_record_list(self) -> List[DateHoursDTO]:
-        youtrack_url = os.getenv("YOUTRACK_BASE_URL")
-        youtrack_token = os.getenv(f"YOUTRACK_ACCESS_TOKEN_{self.postfix}")
+        youtrack_url = Config.get_youtrack_base_url()
+        iterable_dto = Config.get_iterable_import_env(self.postfix)
+        youtrack_token = iterable_dto.youtrack_access_token
         now = datetime.now()
         first_day = datetime(now.year, now.month, 1)
 
@@ -33,8 +32,6 @@ class YoutrackImporter(BaseImporter):
         headers = {
             "Authorization": f"Bearer {youtrack_token}"
         }
-
-        x = os.environ
 
         url = f"{youtrack_url}/api/workItems"
         response = requests.get(url, headers=headers, params=params)
