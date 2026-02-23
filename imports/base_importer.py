@@ -35,20 +35,6 @@ class BaseImporter(ABC):
             "X-Redmine-API-Key": api_key
         }
 
-        print("The following dates will be affected:")
-        hour_sum = 0
-        for dateHourDTO in records:
-            hours = dateHourDTO.hours
-            print(f"{dateHourDTO.date} - {hours}h")
-            hour_sum += hours
-        print(f"Comment: {comment}")
-        print(f"Total hours: {hour_sum}")
-
-        proceed = input("Do you want to continue? (y/n): ").strip().lower()
-        if proceed != "y":
-            print("Script execution stopped by the user.")
-            return
-
         async with aiohttp.ClientSession() as session:
             tasks = []
 

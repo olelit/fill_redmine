@@ -8,8 +8,8 @@ YOUTRACK = 'youtrack'
 
 
 def create_importer(user: UserConfig) -> BaseImporter | None:
-    if user.source == MANUAL:
+    if user.driver == MANUAL:
         return ManualImporter(user)
-    elif user.source == YOUTRACK:
+    elif user.driver == YOUTRACK:
         return YoutrackImporter(user)
     return None
