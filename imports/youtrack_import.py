@@ -10,8 +10,7 @@ class YoutrackImporter(BaseImporter):
 
     def create_record_list(self) -> List[DateHoursDTO]:
         youtrack_url = Config.get_youtrack_base_url()
-        iterable_dto = Config.get_iterable_import_env(self.postfix)
-        youtrack_token = iterable_dto.youtrack_access_token
+        youtrack_token = self.user.youtrack_access_token
         now = datetime.now()
         first_day = datetime(now.year, now.month, 1)
 

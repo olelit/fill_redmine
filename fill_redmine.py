@@ -1,23 +1,17 @@
 import asyncio
-import os
-from dotenv import load_dotenv
+
+from configs.users import USERS
 from imports.import_factory import create_importer
 
 
 async def main():
-    i: int = 1
+    for user in USERS:
+        if not user.is_enable:
+            continue
 
-    while True:
-        source = os.getenv(f"SOURCE_{i}")
-        if source is None:
-            print('End of source. Exiting.')
-            break
-
-        importer = create_importer(i)
-        await importer.run()
-        i += 1
-
-    pass
+        importer = create_importer(user)
+        if importer:
+            await importer.run()
 
 
 if __name__ == "__main__":

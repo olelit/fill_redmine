@@ -5,13 +5,14 @@ from typing import List
 import aiohttp
 
 from configs.config import Config
+from configs.users import UserConfig
 from dto.date_hours_dto import DateHoursDTO
 
 
 class BaseImporter(ABC):
 
-    def __init__(self, postfix: int):
-        self.postfix = postfix
+    def __init__(self, user: UserConfig):
+        self.user = user
 
     @abstractmethod
     def create_record_list(self) -> List[DateHoursDTO]:
@@ -19,14 +20,12 @@ class BaseImporter(ABC):
 
     async def run(self):
         records = self.create_record_list()
-        iterable_dto = Config.get_iterable_import_env(self.postfix)
-        iid = iterable_dto.issue_id
-        uid = iterable_dto.user_id
-        comment = iterable_dto.comment
-        activity_id = iterable_dto.activity_id
-        api_key = iterable_dto.redmine_api_key
+        iid = self.user.issue_id
+        uid = self.user.user_id
+        comment = self.user.comment
+        activity_id = self.user.activity_id
+        api_key = self.user.redmine_api_key
         await self.update_redmine_activity(uid, iid, comment, activity_id, api_key, records)
-        pass
 
     async def update_redmine_activity(self, uid: int, iid: int, comment: str, activity_id: int, api_key: str, records: List[DateHoursDTO]):
         redmine_url = Config.get_redmine_base_url()

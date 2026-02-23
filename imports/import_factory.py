@@ -1,4 +1,4 @@
-from configs.config import Config
+from configs.users import UserConfig
 from imports.base_importer import BaseImporter
 from imports.manual_import import ManualImporter
 from imports.youtrack_import import YoutrackImporter
@@ -6,11 +6,10 @@ from imports.youtrack_import import YoutrackImporter
 MANUAL = 'manual'
 YOUTRACK = 'youtrack'
 
-def create_importer(postfix : int) -> BaseImporter | None:
-    source = Config.get_iterable_source_env(postfix)
 
-    if source == MANUAL:
-        return ManualImporter(postfix)
-    elif source == YOUTRACK:
-        return YoutrackImporter(postfix)
+def create_importer(user: UserConfig) -> BaseImporter | None:
+    if user.source == MANUAL:
+        return ManualImporter(user)
+    elif user.source == YOUTRACK:
+        return YoutrackImporter(user)
     return None
