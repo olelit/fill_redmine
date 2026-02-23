@@ -10,7 +10,7 @@ from imports.base_importer import BaseImporter
 
 class ManualImporter(BaseImporter):
     def create_record_list(self) -> list[DateHoursDTO]:
-        exclude_dates = self.user.exclude_dates.split(",")
+        exclude_dates = self.user.exclude_dates
         start_day = date.today().replace(day=1)
         last_day = calendar.monthrange(start_day.year, start_day.month)[1]
         last_day = start_day.replace(day=last_day)
