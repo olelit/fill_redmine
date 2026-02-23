@@ -1,15 +1,12 @@
-from configs.users import UserConfig
+from configs.user_config import UserConfig
 from imports.base_importer import BaseImporter
 from imports.manual_import import ManualImporter
 from imports.youtrack_import import YoutrackImporter
 
-MANUAL = 'manual'
-YOUTRACK = 'youtrack'
-
 
 def create_importer(user: UserConfig) -> BaseImporter | None:
-    if user.driver == MANUAL:
+    if user.is_manual():
         return ManualImporter(user)
-    elif user.driver == YOUTRACK:
+    elif user.is_youtrack():
         return YoutrackImporter(user)
     return None

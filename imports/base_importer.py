@@ -5,7 +5,7 @@ from typing import List
 import aiohttp
 
 from configs.config import Config
-from configs.users import UserConfig
+from configs.user_config import UserConfig
 from dto.date_hours_dto import DateHoursDTO
 
 

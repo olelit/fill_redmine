@@ -1,6 +1,6 @@
 import asyncio
 
-from configs.users import USERS
+from user_list import USERS
 from imports.import_factory import create_importer
 
 

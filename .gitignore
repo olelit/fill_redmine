@@ -2,7 +2,7 @@
 .idea
 venv
 __pycache__/
-configs/users.py
+user_list.py
 configs/__pycache__/
 dto/__pycache__/
 imports/__pycache__/
