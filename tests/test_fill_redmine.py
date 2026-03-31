@@ -4,18 +4,20 @@ import pytest
 
 from configs.user_config import MANUAL, UserConfig
 from dto.date_hours_dto import DateHoursDTO
-from fill_redmine import format_created_on, get_issue_info, main
+from dto.issue_info_dto import IssueInfoDTO
+from fill_redmine import main
+from services.issue_service import IssueService
 
 
 class TestFillRedmine:
     def test_format_created_on_formats_iso_datetime(self):
-        result = format_created_on("2026-03-31T08:13:51Z")
+        result = IssueService.format_created_on("2026-03-31T08:13:51Z")
 
         assert result == "2026-03-31 08:13:51 UTC"
 
     def test_get_issue_info_returns_subject_author_and_url(self):
-        with patch("fill_redmine.Config.get_redmine_base_url", return_value="http://redmine/"), \
-             patch("fill_redmine.requests.get") as mock_get:
+        with patch("clients.redmine_client.Config.get_redmine_base_url", return_value="http://redmine/"), \
+             patch("clients.redmine_client.requests.get") as mock_get:
             mock_response = MagicMock()
             mock_response.json.return_value = {
                 "issue": {
@@ -27,14 +29,14 @@ class TestFillRedmine:
             mock_response.raise_for_status = MagicMock()
             mock_get.return_value = mock_response
 
-            result = get_issue_info(issue_id=2574, api_key="test_api_key")
+            result = IssueService.get_issue_info(issue_id=2574, api_key="test_api_key")
 
-        assert result == {
-            "subject": "Fill Redmine output",
-            "url": "http://redmine/issues/2574",
-            "author": "Oleg",
-            "created_on": "2026-03-31 08:13:51 UTC",
-        }
+        assert result == IssueInfoDTO(
+            subject="Fill Redmine output",
+            url="http://redmine/issues/2574",
+            author="Oleg",
+            created_on="2026-03-31 08:13:51 UTC",
+        )
 
     @pytest.mark.asyncio
     async def test_main_prints_issue_details_before_dates(self, capsys):
@@ -60,13 +62,13 @@ class TestFillRedmine:
         with patch("fill_redmine.USERS", [user]), \
              patch("fill_redmine.create_importer", return_value=mock_importer), \
              patch(
-                 "fill_redmine.get_issue_info",
-                 return_value={
-                     "subject": "Issue title",
-                     "url": "http://redmine/issues/123",
-                     "author": "Oleg",
-                     "created_on": "2026-03-30 10:00:00 UTC",
-                 },
+                 "services.preview_service.IssueService.get_issue_info",
+                 return_value=IssueInfoDTO(
+                     subject="Issue title",
+                     url="http://redmine/issues/123",
+                     author="Oleg",
+                     created_on="2026-03-30 10:00:00 UTC",
+                 ),
              ), \
              patch("builtins.input", return_value="n"):
             await main()

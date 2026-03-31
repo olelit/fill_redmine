@@ -33,8 +33,8 @@ class TestYoutrackImporter:
             {"date": 1704153600000, "duration": {"minutes": 480}},
         ]
         
-        with patch("imports.youtrack_import.requests.get") as mock_get, \
-             patch("imports.youtrack_import.Config.get_youtrack_base_url", return_value="http://youtrack"):
+        with patch("clients.youtrack_client.requests.get") as mock_get, \
+             patch("clients.youtrack_client.Config.get_youtrack_base_url", return_value="http://youtrack"):
             mock_response = MagicMock()
             mock_response.json.return_value = mock_data
             mock_response.raise_for_status = MagicMock()
@@ -51,8 +51,8 @@ class TestYoutrackImporter:
             {"date": 1704067200000, "duration": {"minutes": 240}},
         ]
         
-        with patch("imports.youtrack_import.requests.get") as mock_get, \
-             patch("imports.youtrack_import.Config.get_youtrack_base_url", return_value="http://youtrack"):
+        with patch("clients.youtrack_client.requests.get") as mock_get, \
+             patch("clients.youtrack_client.Config.get_youtrack_base_url", return_value="http://youtrack"):
             mock_response = MagicMock()
             mock_response.json.return_value = mock_data
             mock_response.raise_for_status = MagicMock()
@@ -66,8 +66,8 @@ class TestYoutrackImporter:
     def test_create_record_list_uses_bearer_token(self, importer):
         mock_data = []
         
-        with patch("imports.youtrack_import.requests.get") as mock_get, \
-             patch("imports.youtrack_import.Config.get_youtrack_base_url", return_value="http://youtrack"):
+        with patch("clients.youtrack_client.requests.get") as mock_get, \
+             patch("clients.youtrack_client.Config.get_youtrack_base_url", return_value="http://youtrack"):
             mock_response = MagicMock()
             mock_response.json.return_value = mock_data
             mock_response.raise_for_status = MagicMock()

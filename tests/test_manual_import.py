@@ -65,10 +65,11 @@ class TestManualImporter:
             </time_entry>
         </time_entries>"""
         
-        with patch("imports.manual_import.requests.get") as mock_get, \
-             patch("imports.manual_import.Config.get_redmine_base_url", return_value="http://redmine"):
+        with patch("clients.redmine_client.requests.get") as mock_get, \
+             patch("clients.redmine_client.Config.get_redmine_base_url", return_value="http://redmine"):
             mock_response = MagicMock()
             mock_response.text = xml_response
+            mock_response.raise_for_status = MagicMock()
             mock_get.return_value = mock_response
             
             result = importer.get_times()

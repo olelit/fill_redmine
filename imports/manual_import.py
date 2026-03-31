@@ -1,10 +1,7 @@
 import calendar
-import xml.etree.ElementTree as et
 from datetime import date, timedelta
 
-import requests
-
-from configs.config import Config
+from clients.redmine_client import RedmineClient
 from dto.date_hours_dto import DateHoursDTO
 from imports.base_importer import BaseImporter
 
@@ -35,23 +32,8 @@ class ManualImporter(BaseImporter):
         return records
 
     def get_times(self):
-        iid = self.user.issue_id
-        uid = self.user.user_id
-        api_key = self.user.redmine_api_key
-        redmine_url = Config.get_redmine_base_url()
-
-        params = {"user_id": uid, "issue_id": iid}
-        headers = {"Content-Type": "application/xml", "X-Redmine-API-Key": api_key}
-        url = f"{redmine_url}/time_entries.xml"
-        response = requests.get(url, headers=headers, params=params)
-
-        spent_on_dates = set()
-        try:
-            root = et.fromstring(response.text)
-            for entry in root.findall("time_entry"):
-                spent_on = entry.find("spent_on")
-                if spent_on is not None and spent_on.text:
-                    spent_on_dates.add(spent_on.text)
-        except Exception as e:
-            print(f"XML parse error: {e}")
-        return spent_on_dates
+        client = RedmineClient(api_key=self.user.redmine_api_key)
+        return client.get_spent_on_dates(
+            user_id=self.user.user_id,
+            issue_id=self.user.issue_id,
+        )

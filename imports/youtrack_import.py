@@ -1,16 +1,13 @@
-import requests
 from datetime import datetime, timedelta
 from typing import List
-from configs.config import Config
+
+from clients.youtrack_client import YoutrackClient
 from dto.date_hours_dto import DateHoursDTO
 from imports.base_importer import BaseImporter
 
 
 class YoutrackImporter(BaseImporter):
-
     def create_record_list(self) -> List[DateHoursDTO]:
-        youtrack_url = Config.get_youtrack_base_url()
-        youtrack_token = self.user.youtrack_access_token
         now = datetime.now()
         first_day = datetime(now.year, now.month, 1)
 
@@ -20,31 +17,16 @@ class YoutrackImporter(BaseImporter):
             first_day_next_month = datetime(now.year, now.month + 1, 1)
             last_day = first_day_next_month - timedelta(days=1)
 
-        params = {
-            "fields": "date,duration(minutes)",
-            "start": int(first_day.timestamp() * 1000),
-            "end": int(last_day.timestamp() * 1000),
-            "$top": 500,
-            "author": "me",
-        }
-
-        headers = {
-            "Authorization": f"Bearer {youtrack_token}"
-        }
-
-        url = f"{youtrack_url}/api/workItems"
-        response = requests.get(url, headers=headers, params=params)
-        response.raise_for_status()
-
-        data = response.json()
+        client = YoutrackClient(access_token=self.user.youtrack_access_token)
+        data = client.get_work_items(start_date=first_day, end_date=last_day)
         result = {}
         for item in data:
-            date = datetime.fromtimestamp(item['date'] / 1000).strftime("%Y-%m-%d")
+            date = datetime.fromtimestamp(item["date"] / 1000).strftime("%Y-%m-%d")
 
             if date not in result:
                 result[date] = 0
 
-            result[date] += item['duration']['minutes'] / 60
+            result[date] += item["duration"]["minutes"] / 60
 
         dto_list: list[DateHoursDTO] = [
             DateHoursDTO(date=d, hours=h) for d, h in result.items()

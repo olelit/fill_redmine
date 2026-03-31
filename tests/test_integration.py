@@ -1,4 +1,3 @@
-import asyncio
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -63,15 +62,8 @@ class TestIntegration:
         mock_session_instance = MockSession()
 
         with patch.object(importer, "get_times", return_value=set()), \
-             patch("imports.manual_import.Config.get_redmine_base_url", return_value="http://redmine"), \
-             patch("imports.base_importer.Config.get_redmine_base_url", return_value="http://redmine"), \
-             patch("imports.manual_import.requests.get") as mock_get, \
-             patch("imports.base_importer.aiohttp.ClientSession", return_value=mock_session_instance):
-
-            mock_xml_response = MagicMock()
-            mock_xml_response.text = """<?xml version="1.0" encoding="UTF-8"?>
-            <time_entries type="array"></time_entries>"""
-            mock_get.return_value = mock_xml_response
+             patch("clients.redmine_client.Config.get_redmine_base_url", return_value="http://redmine"), \
+             patch("clients.redmine_client.aiohttp.ClientSession", return_value=mock_session_instance):
 
             records = importer.create_record_list()
 
@@ -102,10 +94,10 @@ class TestIntegration:
 
         mock_session_instance = MockSession()
 
-        with patch("imports.youtrack_import.requests.get") as mock_get, \
-             patch("imports.youtrack_import.Config.get_youtrack_base_url", return_value="http://youtrack"), \
-             patch("imports.base_importer.Config.get_redmine_base_url", return_value="http://redmine"), \
-             patch("imports.base_importer.aiohttp.ClientSession", return_value=mock_session_instance):
+        with patch("clients.youtrack_client.requests.get") as mock_get, \
+             patch("clients.youtrack_client.Config.get_youtrack_base_url", return_value="http://youtrack"), \
+             patch("clients.redmine_client.Config.get_redmine_base_url", return_value="http://redmine"), \
+             patch("clients.redmine_client.aiohttp.ClientSession", return_value=mock_session_instance):
 
             mock_yt_response = MagicMock()
             mock_yt_response.json.return_value = mock_data
