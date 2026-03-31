@@ -1,6 +1,7 @@
 import calendar
-from datetime import date, timedelta
 import xml.etree.ElementTree as et
+from datetime import date, timedelta
+
 import requests
 
 from configs.config import Config
@@ -23,9 +24,9 @@ class ManualImporter(BaseImporter):
             day_str = start_day.isoformat()
 
             if (
-                    start_day.weekday() < 5
-                    and day_str not in exclude_dates
-                    and day_str not in spent_on_dates
+                start_day.weekday() < 5
+                and day_str not in exclude_dates
+                and day_str not in spent_on_dates
             ):
                 records.append(DateHoursDTO(date=day_str, hours=8))
 
@@ -39,14 +40,8 @@ class ManualImporter(BaseImporter):
         api_key = self.user.redmine_api_key
         redmine_url = Config.get_redmine_base_url()
 
-        params = {
-            "user_id": uid,
-            "issue_id": iid
-        }
-        headers = {
-            "Content-Type": "application/xml",
-            "X-Redmine-API-Key": api_key
-        }
+        params = {"user_id": uid, "issue_id": iid}
+        headers = {"Content-Type": "application/xml", "X-Redmine-API-Key": api_key}
         url = f"{redmine_url}/time_entries.xml"
         response = requests.get(url, headers=headers, params=params)
 

@@ -10,7 +10,6 @@ from dto.date_hours_dto import DateHoursDTO
 
 
 class BaseImporter(ABC):
-
     def __init__(self, user: UserConfig):
         self.user = user
 
@@ -18,31 +17,52 @@ class BaseImporter(ABC):
     def create_record_list(self) -> List[DateHoursDTO]:
         pass
 
-    async def run(self):
+    async def handle(self):
         records = self.create_record_list()
         iid = self.user.issue_id
         uid = self.user.user_id
         comment = self.user.comment
         activity_id = self.user.activity_id
         api_key = self.user.redmine_api_key
-        await self.update_redmine_activity(uid, iid, comment, activity_id, api_key, records)
+        await self.update_redmine_activity(
+            uid, iid, comment, activity_id, api_key, records
+        )
 
-    async def update_redmine_activity(self, uid: int, iid: int, comment: str, activity_id: int, api_key: str, records: List[DateHoursDTO]):
+    async def update_redmine_activity(
+        self,
+        uid: int,
+        iid: int,
+        comment: str,
+        activity_id: int,
+        api_key: str,
+        records: List[DateHoursDTO],
+    ):
         redmine_url = Config.get_redmine_base_url()
         url = f"{redmine_url}/time_entries.xml"
-        headers = {
-            "Content-Type": "application/xml",
-            "X-Redmine-API-Key": api_key
-        }
+        headers = {"Content-Type": "application/xml", "X-Redmine-API-Key": api_key}
 
         async with aiohttp.ClientSession() as session:
             tasks = []
 
             for dateHourDTO in records:
-                    tasks.append(self.set_time(session, url, headers, iid, uid, dateHourDTO.date, dateHourDTO.hours, activity_id, comment))
+                tasks.append(
+                    self.set_time(
+                        session,
+                        url,
+                        headers,
+                        iid,
+                        uid,
+                        dateHourDTO.date,
+                        dateHourDTO.hours,
+                        activity_id,
+                        comment,
+                    )
+                )
             await asyncio.gather(*tasks)
 
-    async def set_time(self, session, url, headers, iid, uid, day, hours, activity_id, comments):
+    async def set_time(
+        self, session, url, headers, iid, uid, day, hours, activity_id, comments
+    ):
         body = f"""
     <time_entry>
       <issue_id>{iid}</issue_id>

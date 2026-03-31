@@ -12,13 +12,13 @@ from imports.youtrack_import import YoutrackImporter
 class MockResponse:
     def __init__(self):
         self.status = 201
-    
+
     async def text(self):
         return ""
-    
+
     async def __aenter__(self):
         return self
-    
+
     async def __aexit__(self, *args):
         pass
 
@@ -26,13 +26,13 @@ class MockResponse:
 class MockSession:
     def __init__(self):
         pass
-    
+
     def post(self, *args, **kwargs):
         return MockResponse()
-    
+
     async def __aenter__(self):
         return self
-    
+
     async def __aexit__(self, *args):
         pass
 
@@ -67,18 +67,18 @@ class TestIntegration:
              patch("imports.base_importer.Config.get_redmine_base_url", return_value="http://redmine"), \
              patch("imports.manual_import.requests.get") as mock_get, \
              patch("imports.base_importer.aiohttp.ClientSession", return_value=mock_session_instance):
-            
+
             mock_xml_response = MagicMock()
             mock_xml_response.text = """<?xml version="1.0" encoding="UTF-8"?>
             <time_entries type="array"></time_entries>"""
             mock_get.return_value = mock_xml_response
 
             records = importer.create_record_list()
-            
+
             assert isinstance(records, list)
             assert len(records) > 0
 
-            await importer.run()
+            await importer.handle()
 
     @pytest.mark.asyncio
     async def test_full_youtrack_import_flow_with_mocks(self):
@@ -106,18 +106,18 @@ class TestIntegration:
              patch("imports.youtrack_import.Config.get_youtrack_base_url", return_value="http://youtrack"), \
              patch("imports.base_importer.Config.get_redmine_base_url", return_value="http://redmine"), \
              patch("imports.base_importer.aiohttp.ClientSession", return_value=mock_session_instance):
-            
+
             mock_yt_response = MagicMock()
             mock_yt_response.json.return_value = mock_data
             mock_yt_response.raise_for_status = MagicMock()
             mock_get.return_value = mock_yt_response
 
             records = importer.create_record_list()
-            
+
             assert isinstance(records, list)
             assert len(records) > 0
 
-            await importer.run()
+            await importer.handle()
 
     def test_create_importer_for_each_user_type(self):
         manual_user = UserConfig(
@@ -131,7 +131,7 @@ class TestIntegration:
             driver=MANUAL,
             youtrack_access_token="",
         )
-        
+
         youtrack_user = UserConfig(
             is_enable=True,
             name="Youtrack",
