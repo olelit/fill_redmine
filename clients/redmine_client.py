@@ -13,6 +13,15 @@ class RedmineClient:
         self.api_key = api_key
         self.base_url = (Config.get_redmine_base_url() or "").rstrip("/")
 
+    @staticmethod
+    def print_progress(completed: int, total: int) -> None:
+        bar_length = 20
+        filled = bar_length if total == 0 else int(bar_length * completed / total)
+        bar = "#" * filled + "-" * (bar_length - filled)
+        print(f"\rProgress: [{bar}] {completed}/{total}", end="", flush=True)
+        if completed == total:
+            print()
+
     def get_issue(self, issue_id: int) -> dict | None:
         url = f"{self.base_url}/issues/{issue_id}.json"
         headers = {"X-Redmine-API-Key": self.api_key}
@@ -67,20 +76,38 @@ class RedmineClient:
 
         async with aiohttp.ClientSession() as session:
             tasks = [
-                self.create_time_entry(
-                    session=session,
-                    url=url,
-                    headers=headers,
-                    issue_id=issue_id,
-                    user_id=user_id,
-                    spent_on=record.date,
-                    hours=record.hours,
-                    activity_id=activity_id,
-                    comment=comment,
+                asyncio.create_task(
+                    self.create_time_entry(
+                        session=session,
+                        url=url,
+                        headers=headers,
+                        issue_id=issue_id,
+                        user_id=user_id,
+                        spent_on=record.date,
+                        hours=record.hours,
+                        activity_id=activity_id,
+                        comment=comment,
+                    )
                 )
                 for record in records
             ]
-            await asyncio.gather(*tasks)
+
+            total = len(tasks)
+            if total == 0:
+                return
+
+            completed = 0
+            self.print_progress(completed=completed, total=total)
+
+            for task in asyncio.as_completed(tasks):
+                success, spent_on, error_message = await task
+                completed += 1
+
+                if not success:
+                    print()
+                    print(f"ERROR: {spent_on} {error_message}")
+
+                self.print_progress(completed=completed, total=total)
 
     async def create_time_entry(
         self,
@@ -93,7 +120,7 @@ class RedmineClient:
         hours: int | float,
         activity_id: int,
         comment: str,
-    ) -> None:
+    ) -> tuple[bool, str, str | None]:
         body = f"""
     <time_entry>
       <issue_id>{issue_id}</issue_id>
@@ -107,6 +134,6 @@ class RedmineClient:
         async with session.post(url, headers=headers, data=body) as response:
             text = await response.text()
             if 200 <= response.status < 300:
-                print(f"OK: {spent_on}")
-            else:
-                print(f"ERROR: {spent_on} {response.status} {text}")
+                return True, spent_on, None
+
+            return False, spent_on, f"{response.status} {text}"
