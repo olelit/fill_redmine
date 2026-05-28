@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 
 from imports.import_factory import create_importer
@@ -5,11 +6,15 @@ from services.preview_service import PreviewService
 from user_list import USERS
 
 
-async def main():
+async def main(override_issue_id: int | None = None):
     enabled_users = [u for u in USERS if u.is_enable]
     if not enabled_users:
         print("No enabled users found.")
         return
+
+    if override_issue_id:
+        for u in enabled_users:
+            u.issue_id = override_issue_id
 
     PreviewService.print_header()
 
@@ -54,4 +59,7 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--id", type=int, help="Override issue ID for all users")
+    args = parser.parse_args()
+    asyncio.run(main(override_issue_id=args.id))

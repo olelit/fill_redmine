@@ -75,9 +75,7 @@ class TestFillRedmine:
 
         output = capsys.readouterr().out
 
-        assert "Issue ID: 123" in output
+        assert "Issue Data: Id: 123, Author: Oleg, Created: 2026-03-30 10:00:00 UTC" in output
         assert "Issue: Issue title" in output
         assert "Issue URL: http://redmine/issues/123" in output
-        assert "Issue author: Oleg" in output
-        assert "Issue created: 2026-03-30 10:00:00 UTC" in output
         assert output.index("Issue: Issue title") < output.index("Dates:")

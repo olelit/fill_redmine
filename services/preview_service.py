@@ -33,8 +33,7 @@ class PreviewService:
         issue_info: IssueInfoDTO | None,
     ) -> None:
         print(f"=== User: {user.name} (user_id={user.user_id}) ===")
-        print(f"Issue ID: {user.issue_id}")
-        PreviewService.print_issue_info(issue_info)
+        PreviewService.print_issue_info(issue_info, user.issue_id)
         print(f"Driver: {user.driver}")
         print(f"Comment: {user.comment}")
         print("Dates:")
@@ -72,11 +71,11 @@ class PreviewService:
         print()
 
     @staticmethod
-    def print_issue_info(issue_info: IssueInfoDTO | None) -> None:
+    def print_issue_info(issue_info: IssueInfoDTO | None, issue_id: int) -> None:
         if not issue_info:
+            print(f"Issue Data: {issue_id}")
             return
 
+        print(f"Issue Data: Id: {issue_id}, Author: {issue_info.author}, Created: {issue_info.created_on}")
         print(f"Issue: {issue_info.subject}")
         print(f"Issue URL: {issue_info.url}")
-        print(f"Issue author: {issue_info.author}")
-        print(f"Issue created: {issue_info.created_on}")
