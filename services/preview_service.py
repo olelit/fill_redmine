@@ -1,3 +1,5 @@
+from datetime import date
+
 from configs.user_config import UserConfig
 from dto.date_hours_dto import DateHoursDTO
 from dto.issue_info_dto import IssueInfoDTO
@@ -38,9 +40,33 @@ class PreviewService:
         print("Dates:")
 
         total_hours = 0
-        for record in records:
-            print(f"  {record.date} - {record.hours}h")
-            total_hours += record.hours
+
+        if records:
+            range_start = records[0]
+            prev = records[0]
+            range_count = 1
+
+            for record in records[1:]:
+                prev_dt = date.fromisoformat(prev.date)
+                curr_dt = date.fromisoformat(record.date)
+                if record.hours == prev.hours and (curr_dt - prev_dt).days == 1:
+                    prev = record
+                    range_count += 1
+                else:
+                    total_hours += range_count * range_start.hours
+                    if range_start.date == prev.date:
+                        print(f"  {range_start.date} - {range_start.hours}h")
+                    else:
+                        print(f"  {range_start.date} - {prev.date} - {range_start.hours}h")
+                    range_start = record
+                    prev = record
+                    range_count = 1
+
+            total_hours += range_count * range_start.hours
+            if range_start.date == prev.date:
+                print(f"  {range_start.date} - {range_start.hours}h")
+            else:
+                print(f"  {range_start.date} - {prev.date} - {range_start.hours}h")
 
         print(f"Total hours: {total_hours}h")
         print()
