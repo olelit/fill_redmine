@@ -5,7 +5,7 @@ from tkinter import messagebox, ttk
 
 from gui.formatting import format_hours, format_range
 from gui.worker import GuiWorker
-from services.import_service import ImportService, ImportSummary, PreparedImport
+from services.import_service import ImportService, ImportSummary, PrepareResult, PreparedImport
 
 
 class ImportView(ttk.LabelFrame):
@@ -63,6 +63,7 @@ class ImportView(ttk.LabelFrame):
         for column, (title, width) in headings.items():
             self.tree.heading(column, text=title)
             self.tree.column(column, width=width, anchor="w")
+        self.tree.tag_configure("error", foreground="#c0392b")
         self.tree.pack(fill="both", expand=True, pady=4)
 
         progress_frame = ttk.Frame(self)
@@ -111,10 +112,10 @@ class ImportView(ttk.LabelFrame):
             error_kind="error",
         )
 
-    def _on_preview_done(self, items: list[PreparedImport]) -> None:
+    def _on_preview_done(self, result: PrepareResult) -> None:
         try:
-            self.prepared = items
-            for item in items:
+            self.prepared = result.items
+            for item in result.items:
                 preview = item.preview
                 parent = self.tree.insert(
                     "",
@@ -141,8 +142,25 @@ class ImportView(ttk.LabelFrame):
                             format_hours(date_range.hours),
                         ),
                     )
-            self.log(f"Превью готово: юзеров {len(items)}")
-            if not items:
+            for preview in result.errors:
+                self.tree.insert(
+                    "",
+                    "end",
+                    tags=("error",),
+                    values=(
+                        preview.user_name,
+                        preview.driver,
+                        preview.issue_id,
+                        f"Ошибка: {preview.error}",
+                        "",
+                        "",
+                    ),
+                )
+            self.log(
+                f"Превью готово: юзеров {len(result.items)}, "
+                f"ошибок {len(result.errors)}"
+            )
+            if not result.items:
                 messagebox.showinfo("Fill Redmine", "Нет записей для импорта", parent=self)
         finally:
             self._set_busy(False)

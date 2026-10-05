@@ -26,6 +26,7 @@ class PreviewService:
         user: UserConfig,
         records: list[DateHoursDTO],
         issue_info: IssueInfoDTO | None,
+        error: str | None = None,
     ) -> PreviewDTO:
         ranges: list[DateRangeDTO] = []
         total_hours: float = 0
@@ -65,6 +66,7 @@ class PreviewService:
             issue_created_on=issue_info.created_on if issue_info else None,
             ranges=ranges,
             total_hours=total_hours,
+            error=error,
         )
 
     @staticmethod
@@ -76,6 +78,10 @@ class PreviewService:
     @staticmethod
     def print_preview(preview: PreviewDTO) -> None:
         print(f"=== User: {preview.user_name} (user_id={preview.user_id}) ===")
+        if preview.error is not None:
+            print(f"Ошибка: {preview.error}")
+            print()
+            return
         if preview.issue_subject is None:
             print(f"Issue Data: {preview.issue_id}")
         else:

@@ -89,3 +89,24 @@ class TestBuildUserPreview:
 
         assert preview.issue_subject is None
         assert preview.issue_url is None
+
+    def test_error_parameter_is_stored(self):
+        preview = PreviewService.build_user_preview(
+            make_user(), [], None, error="сбой сети"
+        )
+
+        assert preview.error == "сбой сети"
+
+
+class TestPrintPreview:
+    def test_prints_error_preview_without_dates(self, capsys):
+        preview = PreviewService.build_user_preview(
+            make_user(), [], None, error="сбой сети"
+        )
+
+        PreviewService.print_preview(preview)
+
+        output = capsys.readouterr().out
+        assert "=== User: Олег (user_id=16) ===" in output
+        assert "Ошибка: сбой сети" in output
+        assert "Dates:" not in output

@@ -24,24 +24,34 @@ class ImportSummary:
     errors: list[tuple[str, str, str]] = field(default_factory=list)
 
 
+@dataclass
+class PrepareResult:
+    items: list[PreparedImport] = field(default_factory=list)
+    errors: list[PreviewDTO] = field(default_factory=list)
+
+
 class ImportService:
     def __init__(self, log: Callable[[str], None] = print):
         self.log = log
 
-    def prepare(self, users: list[UserConfig]) -> list[PreparedImport]:
-        items: list[PreparedImport] = []
+    def prepare(self, users: list[UserConfig]) -> PrepareResult:
+        result = PrepareResult()
         issue_info_cache: dict[int, IssueInfoDTO | None] = {}
 
         for user in users:
             importer = create_importer(user)
             if importer is None:
-                self.log(f"{user.name}: неизвестный driver «{user.driver}», пропуск")
+                message = f"неизвестный driver «{user.driver}»"
+                self.log(f"{user.name}: {message}, пропуск")
+                result.errors.append(self._error_preview(user, message))
                 continue
 
             try:
                 records = importer.create_record_list()
             except Exception as exc:
-                self.log(f"{user.name}: ошибка получения записей: {exc}")
+                message = f"ошибка получения записей: {exc}"
+                self.log(f"{user.name}: {message}")
+                result.errors.append(self._error_preview(user, message))
                 continue
 
             if not records:
@@ -57,7 +67,7 @@ class ImportService:
                 records=records,
                 issue_info=issue_info,
             )
-            items.append(
+            result.items.append(
                 PreparedImport(
                     user=user,
                     importer=importer,
@@ -66,7 +76,16 @@ class ImportService:
                 )
             )
 
-        return items
+        return result
+
+    @staticmethod
+    def _error_preview(user: UserConfig, message: str) -> PreviewDTO:
+        return PreviewService.build_user_preview(
+            user=user,
+            records=[],
+            issue_info=None,
+            error=message,
+        )
 
     async def run(
         self,

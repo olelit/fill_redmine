@@ -25,12 +25,14 @@ async def main(
     PreviewService.print_header()
 
     service = ImportService()
-    items = service.prepare(enabled_users)
+    result = service.prepare(enabled_users)
 
-    for item in items:
+    for item in result.items:
         PreviewService.print_preview(item.preview)
+    for preview in result.errors:
+        PreviewService.print_preview(preview)
 
-    if not items:
+    if not result.items:
         print("No time entries to import.")
         return
 
@@ -41,7 +43,7 @@ async def main(
 
     print("\nStarting import...\n")
 
-    summary = await service.run(items)
+    summary = await service.run(result.items)
     success = summary.total - len(summary.errors)
     print(f"Import finished: {success} entries, {len(summary.errors)} errors.")
 

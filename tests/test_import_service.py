@@ -3,7 +3,7 @@ import pytest
 from configs.user_config import MANUAL, UserConfig
 from dto.date_hours_dto import DateHoursDTO
 from dto.issue_info_dto import IssueInfoDTO
-from services.import_service import ImportService, PreparedImport
+from services.import_service import ImportService, PrepareResult, PreparedImport
 from services.preview_service import PreviewService
 
 
@@ -63,22 +63,30 @@ class TestImportServicePrepare:
             lambda issue_info_cache, user: make_issue_info(),
         )
 
-        items = service.prepare([make_user()])
+        result = service.prepare([make_user()])
 
-        assert len(items) == 1
+        assert len(result.items) == 1
+        assert result.errors == []
         assert importer.create_calls == 1
-        assert items[0].preview.user_name == "Олег"
-        assert items[0].preview.issue_subject == "Тема"
-        assert items[0].records == records
+        assert result.items[0].preview.user_name == "Олег"
+        assert result.items[0].preview.issue_subject == "Тема"
+        assert result.items[0].records == records
 
-    def test_prepare_skips_user_when_importer_missing(self, monkeypatch):
+    def test_prepare_reports_unknown_driver_as_error_preview(self, monkeypatch):
         logs = []
         service = ImportService(log=logs.append)
         monkeypatch.setattr("services.import_service.create_importer", lambda user: None)
 
-        items = service.prepare([make_user()])
+        result = service.prepare([make_user()])
 
-        assert items == []
+        assert result.items == []
+        assert len(result.errors) == 1
+        error_preview = result.errors[0]
+        assert error_preview.user_name == "Олег"
+        assert error_preview.user_id == 16
+        assert error_preview.issue_id == 2682
+        assert "driver" in error_preview.error
+        assert error_preview.total_hours == 0
         assert any("driver" in message for message in logs)
 
     def test_prepare_skips_user_without_records(self, monkeypatch):
@@ -86,10 +94,13 @@ class TestImportServicePrepare:
         importer = FakeImporter(records=[])
         monkeypatch.setattr("services.import_service.create_importer", lambda user: importer)
 
-        assert service.prepare([make_user()]) == []
+        result = service.prepare([make_user()])
+
+        assert result.items == []
+        assert result.errors == []
         assert importer.create_calls == 1
 
-    def test_prepare_logs_and_skips_fetch_errors(self, monkeypatch):
+    def test_prepare_reports_fetch_errors_as_error_previews(self, monkeypatch):
         logs = []
 
         class BrokenImporter:
@@ -100,10 +111,31 @@ class TestImportServicePrepare:
             "services.import_service.create_importer", lambda user: BrokenImporter()
         )
 
-        items = ImportService(log=logs.append).prepare([make_user()])
+        result = ImportService(log=logs.append).prepare([make_user()])
 
-        assert items == []
+        assert result.items == []
+        assert len(result.errors) == 1
+        assert "network down" in result.errors[0].error
         assert any("network down" in message for message in logs)
+
+    def test_prepare_keeps_successful_users_alongside_errors(self, monkeypatch):
+        users = [make_user(name="Первый"), make_user(name="Второй")]
+        importer = FakeImporter(records=[DateHoursDTO(date="2026-10-01", hours=8)])
+
+        def fake_create_importer(user):
+            return importer if user.name == "Первый" else None
+
+        monkeypatch.setattr("services.import_service.create_importer", fake_create_importer)
+        monkeypatch.setattr(
+            "services.import_service.PreviewService.get_issue_info",
+            lambda issue_info_cache, user: make_issue_info(),
+        )
+
+        result = ImportService(log=lambda message: None).prepare(users)
+
+        assert isinstance(result, PrepareResult)
+        assert [item.user.name for item in result.items] == ["Первый"]
+        assert [preview.user_name for preview in result.errors] == ["Второй"]
 
 
 class TestImportServiceRun:
