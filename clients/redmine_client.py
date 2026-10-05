@@ -108,8 +108,9 @@ class RedmineClient:
                 completed += 1
 
                 if not success:
-                    print()
-                    print(f"ERROR: {spent_on} {error_message}")
+                    if on_progress is None:
+                        print()
+                        print(f"ERROR: {spent_on} {error_message}")
                     errors.append((spent_on, error_message))
 
                 if on_progress is not None:

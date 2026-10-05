@@ -112,38 +112,40 @@ class ImportView(ttk.LabelFrame):
         )
 
     def _on_preview_done(self, items: list[PreparedImport]) -> None:
-        self.prepared = items
-        for item in items:
-            preview = item.preview
-            parent = self.tree.insert(
-                "",
-                "end",
-                values=(
-                    preview.user_name,
-                    preview.driver,
-                    preview.issue_id,
-                    preview.issue_subject or "—",
+        try:
+            self.prepared = items
+            for item in items:
+                preview = item.preview
+                parent = self.tree.insert(
                     "",
-                    format_hours(preview.total_hours),
-                ),
-            )
-            for date_range in preview.ranges:
-                self.tree.insert(
-                    parent,
                     "end",
                     values=(
+                        preview.user_name,
+                        preview.driver,
+                        preview.issue_id,
+                        preview.issue_subject or "—",
                         "",
-                        "",
-                        "",
-                        "",
-                        format_range(date_range),
-                        format_hours(date_range.hours),
+                        format_hours(preview.total_hours),
                     ),
                 )
-        self._set_busy(False)
-        self.log(f"Превью готово: юзеров {len(items)}")
-        if not items:
-            messagebox.showinfo("Fill Redmine", "Нет записей для импорта", parent=self)
+                for date_range in preview.ranges:
+                    self.tree.insert(
+                        parent,
+                        "end",
+                        values=(
+                            "",
+                            "",
+                            "",
+                            "",
+                            format_range(date_range),
+                            format_hours(date_range.hours),
+                        ),
+                    )
+            self.log(f"Превью готово: юзеров {len(items)}")
+            if not items:
+                messagebox.showinfo("Fill Redmine", "Нет записей для импорта", parent=self)
+        finally:
+            self._set_busy(False)
 
     def run_import(self) -> None:
         if not self.prepared:
@@ -173,14 +175,17 @@ class ImportView(ttk.LabelFrame):
         self.progress_label.set(f"{name} {completed}/{total}")
 
     def _on_import_done(self, summary: ImportSummary) -> None:
-        self.prepared = []
-        self._set_busy(False)
-        self.progress_label.set("")
-        message = f"Импорт завершён: {summary.total} записей, ошибок: {len(summary.errors)}"
-        self.log(message)
-        for user_name, spent_on, error in summary.errors:
-            self.log(f"  {user_name} {spent_on}: {error}")
-        messagebox.showinfo("Fill Redmine", message, parent=self)
+        try:
+            self.prepared = []
+            self.progress_label.set("")
+            success = summary.total - len(summary.errors)
+            message = f"Импорт завершён: успешно {success}, ошибок {len(summary.errors)}"
+            self.log(message)
+            for user_name, spent_on, error in summary.errors:
+                self.log(f"  {user_name} {spent_on}: {error}")
+            messagebox.showinfo("Fill Redmine", message, parent=self)
+        finally:
+            self._set_busy(False)
 
     def _on_worker_error(self, exc: Exception) -> None:
         self._set_busy(False)

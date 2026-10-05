@@ -1,6 +1,7 @@
 import importlib.util
+import os
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from storage.user_repository import UserRepository
 
@@ -28,10 +29,13 @@ def migrate_from_user_list(
         users = getattr(module, "USERS", [])
         if not users:
             return False
-        for user in users:
-            repo.add_user(user)
+        repo.add_users(users)
         migrated_path = path.with_name(path.name + ".migrated")
         path.rename(migrated_path)
+        try:
+            os.chmod(migrated_path, 0o600)
+        except OSError:
+            pass
         log(f"Перенесено юзеров: {len(users)}. Файл переименован в {migrated_path.name}")
         return True
     except Exception as exc:

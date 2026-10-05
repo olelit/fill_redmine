@@ -12,7 +12,7 @@ COLUMNS = (
 
 
 class UserRepository:
-    def __init__(self, db_path: Path | str | None = None):
+    def __init__(self, db_path: Path | str | None = None) -> None:
         self.conn = get_connection(db_path)
         create_schema(self.conn)
 
@@ -31,6 +31,13 @@ class UserRepository:
         )
         self.conn.commit()
         return int(cursor.lastrowid)
+
+    def add_users(self, users: list[UserConfig]) -> None:
+        with self.conn:
+            self.conn.executemany(
+                f"INSERT INTO users ({COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [self._user_values(user) for user in users],
+            )
 
     def update_user(self, db_id: int, user: UserConfig) -> None:
         if self.get_user(db_id) is None:

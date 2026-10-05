@@ -43,13 +43,17 @@ class TestValidateUserForm:
         assert "Имя обязательно" in errors
 
     def test_non_integer_user_id_is_rejected(self):
-        user, errors = validate_user_form(valid_form(user_id="abc"), is_enable=True, exclude_dates=[])
+        user, errors = validate_user_form(
+            valid_form(user_id="abc"), is_enable=True, exclude_dates=[]
+        )
 
         assert user is None
         assert any("user_id" in error for error in errors)
 
     def test_zero_issue_id_is_rejected(self):
-        user, errors = validate_user_form(valid_form(issue_id="0"), is_enable=True, exclude_dates=[])
+        user, errors = validate_user_form(
+            valid_form(issue_id="0"), is_enable=True, exclude_dates=[]
+        )
 
         assert user is None
         assert any("issue_id" in error for error in errors)
@@ -75,7 +79,9 @@ class TestValidateUserForm:
         assert user.driver == MANUAL
 
     def test_invalid_driver_is_rejected(self):
-        user, errors = validate_user_form(valid_form(driver="jira"), is_enable=True, exclude_dates=[])
+        user, errors = validate_user_form(
+            valid_form(driver="jira"), is_enable=True, exclude_dates=[]
+        )
 
         assert user is None
         assert any("driver" in error for error in errors)

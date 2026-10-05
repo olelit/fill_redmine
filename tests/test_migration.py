@@ -23,6 +23,39 @@ USERS = [
 '''
 
 
+PARTIAL_FAILURE_TEMPLATE = '''
+from configs.user_config import UserConfig
+
+
+USERS = [
+    UserConfig(
+        is_enable=True,
+        name="Первый",
+        redmine_api_key="key",
+        user_id=16,
+        activity_id=9,
+        comment="development",
+        issue_id=2682,
+        driver="manual",
+        youtrack_access_token="",
+        exclude_dates=[],
+    ),
+    UserConfig(
+        is_enable=True,
+        name="Второй",
+        redmine_api_key="key",
+        user_id=17,
+        activity_id=9,
+        comment="development",
+        issue_id=2683,
+        driver="jira",
+        youtrack_access_token="",
+        exclude_dates=[],
+    ),
+]
+'''
+
+
 def existing_user() -> UserConfig:
     return UserConfig(
         is_enable=True,
@@ -74,6 +107,17 @@ class TestMigrateFromUserList:
         )
 
         assert result is False
+
+    def test_partial_failure_rolls_back_and_keeps_file(self, tmp_path):
+        repo = UserRepository(db_path=tmp_path / "test.db")
+        user_list = tmp_path / "user_list.py"
+        user_list.write_text(PARTIAL_FAILURE_TEMPLATE)
+
+        result = migrate_from_user_list(repo, user_list_path=user_list, log=lambda message: None)
+
+        assert result is False
+        assert repo.list_users() == []
+        assert user_list.exists()
 
     def test_broken_file_does_not_raise(self, tmp_path):
         repo = UserRepository(db_path=tmp_path / "test.db")

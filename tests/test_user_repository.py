@@ -1,8 +1,6 @@
-from unittest.mock import MagicMock
-
 import pytest
 
-from configs.user_config import MANUAL, UserConfig
+from configs.user_config import UserConfig
 from storage.user_repository import UserRepository
 
 
@@ -76,6 +74,13 @@ class TestUserRepository:
 
         repo.set_enabled(db_id, True)
         assert repo.get_user(db_id).is_enable is True
+
+    def test_add_users_inserts_multiple_users(self, repo):
+        repo.add_users([make_user(name="Первый"), make_user(name="Второй")])
+
+        users = repo.list_users()
+        assert len(users) == 2
+        assert [user.name for user in users] == ["Первый", "Второй"]
 
     def test_list_users_populates_db_id(self, repo):
         db_id = repo.add_user(make_user())

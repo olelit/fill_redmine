@@ -126,7 +126,9 @@ class UserEditor(tk.Toplevel):
             return
         self.exclude_dates.append(parsed)
         self.exclude_dates.sort()
-        self.dates_list.insert("end", parsed)
+        self.dates_list.delete(0, "end")
+        for value in self.exclude_dates:
+            self.dates_list.insert("end", value)
         self.date_entry.delete(0, "end")
         self.error_label.configure(text="")
 

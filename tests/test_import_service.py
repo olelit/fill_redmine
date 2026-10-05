@@ -37,6 +37,7 @@ class FakeImporter:
         self.errors = errors if errors is not None else []
         self.create_calls = 0
         self.handle_calls = []
+        self.progress_callbacks = []
 
     def create_record_list(self):
         self.create_calls += 1
@@ -44,6 +45,7 @@ class FakeImporter:
 
     async def handle(self, records=None, on_progress=None):
         self.handle_calls.append(records)
+        self.progress_callbacks.append(on_progress)
         if on_progress is not None:
             for completed in range(1, len(records) + 1):
                 on_progress(completed, len(records))
@@ -149,6 +151,24 @@ class TestImportServiceRun:
         assert summary.errors == [("Второй", "2026-10-01", "500 error")]
         assert importer_one.handle_calls == [importer_one.records]
         assert importer_two.handle_calls == [importer_two.records]
+
+    @pytest.mark.asyncio
+    async def test_run_without_progress_callback_passes_none_to_importer(self):
+        user = make_user()
+        importer = FakeImporter(records=[DateHoursDTO(date="2026-10-01", hours=8)])
+        service = ImportService(log=lambda message: None)
+        items = [
+            PreparedImport(
+                user=user,
+                importer=importer,
+                records=importer.records,
+                preview=PreviewService.build_user_preview(user, importer.records, None),
+            )
+        ]
+
+        await service.run(items)
+
+        assert importer.progress_callbacks == [None]
 
     @pytest.mark.asyncio
     async def test_run_without_items_returns_empty_summary(self):

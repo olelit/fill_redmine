@@ -42,7 +42,8 @@ async def main(
     print("\nStarting import...\n")
 
     summary = await service.run(items)
-    print(f"Import finished: {summary.total} entries, {len(summary.errors)} errors.")
+    success = summary.total - len(summary.errors)
+    print(f"Import finished: {success} entries, {len(summary.errors)} errors.")
 
 
 if __name__ == "__main__":

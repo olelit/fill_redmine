@@ -41,7 +41,7 @@ class UserListView(ttk.LabelFrame):
             self.tree.column(column, width=width, anchor="center")
         self.tree.pack(fill="both", expand=True)
         self.tree.bind("<Double-1>", lambda event: self.edit_user())
-        self.tree.bind("<space>", lambda event: self.toggle_user())
+        self.tree.bind("<space>", self._on_space)
 
     def refresh(self) -> None:
         self.tree.delete(*self.tree.get_children())
@@ -107,3 +107,8 @@ class UserListView(ttk.LabelFrame):
             return
         self.repo.set_enabled(user.db_id, not user.is_enable)
         self.refresh()
+
+    def _on_space(self, event) -> None:
+        if not self.tree.selection():
+            return
+        self.toggle_user()

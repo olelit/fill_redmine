@@ -89,7 +89,7 @@ class ImportService:
 
             item_errors = await item.importer.handle(
                 records=item.records,
-                on_progress=on_progress,
+                on_progress=on_progress if progress_cb is not None else None,
             )
             for spent_on, message in item_errors or []:
                 errors.append((item.user.name, spent_on, message))

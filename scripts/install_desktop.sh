@@ -20,7 +20,7 @@ cat > "$DESKTOP_FILE" <<EOF
 Type=Application
 Name=Fill Redmine
 Comment=Импорт временных записей из YouTrack в Redmine
-Exec=$PROJECT_DIR/run_gui.sh
+Exec="$PROJECT_DIR/run_gui.sh"
 Path=$PROJECT_DIR
 Icon=$PROJECT_DIR/assets/fill_redmine.svg
 Terminal=false
