@@ -17,6 +17,7 @@ class UserConfig:
     driver: str
     youtrack_access_token: str
     exclude_dates: list[str] = field(default_factory=list)
+    db_id: int | None = None
 
     def is_manual(self) -> bool:
         return self.driver == MANUAL

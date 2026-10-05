@@ -76,3 +76,10 @@ class TestUserRepository:
 
         repo.set_enabled(db_id, True)
         assert repo.get_user(db_id).is_enable is True
+
+    def test_list_users_populates_db_id(self, repo):
+        db_id = repo.add_user(make_user())
+
+        users = repo.list_users()
+
+        assert users[0].db_id == db_id

@@ -84,4 +84,5 @@ class UserRepository:
             driver=row["driver"],
             youtrack_access_token=row["youtrack_access_token"],
             exclude_dates=json.loads(row["exclude_dates"] or "[]"),
+            db_id=row["id"],
         )

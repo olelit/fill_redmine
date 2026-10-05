@@ -3,6 +3,7 @@ from datetime import date
 from configs.user_config import UserConfig
 from dto.date_hours_dto import DateHoursDTO
 from dto.issue_info_dto import IssueInfoDTO
+from dto.preview_dto import DateRangeDTO, PreviewDTO
 from services.issue_service import IssueService
 
 
@@ -21,24 +22,13 @@ class PreviewService:
         return issue_info_cache[user.issue_id]
 
     @staticmethod
-    def print_header() -> None:
-        print("\n" + "=" * 50)
-        print("Time entries to be imported")
-        print("=" * 50 + "\n")
-
-    @staticmethod
-    def print_user_preview(
+    def build_user_preview(
         user: UserConfig,
         records: list[DateHoursDTO],
         issue_info: IssueInfoDTO | None,
-    ) -> None:
-        print(f"=== User: {user.name} (user_id={user.user_id}) ===")
-        PreviewService.print_issue_info(issue_info, user.issue_id)
-        print(f"Driver: {user.driver}")
-        print(f"Comment: {user.comment}")
-        print("Dates:")
-
-        total_hours = 0
+    ) -> PreviewDTO:
+        ranges: list[DateRangeDTO] = []
+        total_hours: float = 0
 
         if records:
             range_start = records[0]
@@ -52,30 +42,68 @@ class PreviewService:
                     prev = record
                     range_count += 1
                 else:
+                    ranges.append(
+                        DateRangeDTO(range_start.date, prev.date, range_start.hours)
+                    )
                     total_hours += range_count * range_start.hours
-                    if range_start.date == prev.date:
-                        print(f"  {range_start.date} - {range_start.hours}h")
-                    else:
-                        print(f"  {range_start.date} - {prev.date} - {range_start.hours}h")
                     range_start = record
                     prev = record
                     range_count = 1
 
+            ranges.append(DateRangeDTO(range_start.date, prev.date, range_start.hours))
             total_hours += range_count * range_start.hours
-            if range_start.date == prev.date:
-                print(f"  {range_start.date} - {range_start.hours}h")
-            else:
-                print(f"  {range_start.date} - {prev.date} - {range_start.hours}h")
 
-        print(f"Total hours: {total_hours}h")
+        return PreviewDTO(
+            user_name=user.name,
+            user_id=user.user_id,
+            driver=user.driver,
+            comment=user.comment,
+            issue_id=user.issue_id,
+            issue_subject=issue_info.subject if issue_info else None,
+            issue_url=issue_info.url if issue_info else None,
+            issue_author=issue_info.author if issue_info else None,
+            issue_created_on=issue_info.created_on if issue_info else None,
+            ranges=ranges,
+            total_hours=total_hours,
+        )
+
+    @staticmethod
+    def print_header() -> None:
+        print("\n" + "=" * 50)
+        print("Time entries to be imported")
+        print("=" * 50 + "\n")
+
+    @staticmethod
+    def print_preview(preview: PreviewDTO) -> None:
+        print(f"=== User: {preview.user_name} (user_id={preview.user_id}) ===")
+        if preview.issue_subject is None:
+            print(f"Issue Data: {preview.issue_id}")
+        else:
+            print(
+                f"Issue Data: Id: {preview.issue_id}, "
+                f"Author: {preview.issue_author}, Created: {preview.issue_created_on}"
+            )
+            print(f"Issue: {preview.issue_subject}")
+            print(f"Issue URL: {preview.issue_url}")
+        print(f"Driver: {preview.driver}")
+        print(f"Comment: {preview.comment}")
+        print("Dates:")
+        for date_range in preview.ranges:
+            if date_range.start_date == date_range.end_date:
+                print(f"  {date_range.start_date} - {date_range.hours}h")
+            else:
+                print(
+                    f"  {date_range.start_date} - {date_range.end_date} - "
+                    f"{date_range.hours}h"
+                )
+        print(f"Total hours: {preview.total_hours}h")
         print()
 
     @staticmethod
-    def print_issue_info(issue_info: IssueInfoDTO | None, issue_id: int) -> None:
-        if not issue_info:
-            print(f"Issue Data: {issue_id}")
-            return
-
-        print(f"Issue Data: Id: {issue_id}, Author: {issue_info.author}, Created: {issue_info.created_on}")
-        print(f"Issue: {issue_info.subject}")
-        print(f"Issue URL: {issue_info.url}")
+    def print_user_preview(
+        user: UserConfig,
+        records: list[DateHoursDTO],
+        issue_info: IssueInfoDTO | None,
+    ) -> None:
+        preview = PreviewService.build_user_preview(user, records, issue_info)
+        PreviewService.print_preview(preview)
