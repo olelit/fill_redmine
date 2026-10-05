@@ -1,5 +1,6 @@
 import asyncio
 import xml.etree.ElementTree as et
+from collections.abc import Callable
 
 import aiohttp
 import requests
@@ -67,7 +68,8 @@ class RedmineClient:
         comment: str,
         activity_id: int,
         records: list[DateHoursDTO],
-    ) -> None:
+        on_progress: Callable[[int, int], None] | None = None,
+    ) -> list[tuple[str, str]]:
         url = f"{self.base_url}/time_entries.xml"
         headers = {
             "Content-Type": "application/xml",
@@ -94,10 +96,12 @@ class RedmineClient:
 
             total = len(tasks)
             if total == 0:
-                return
+                return []
 
+            errors: list[tuple[str, str]] = []
             completed = 0
-            self.print_progress(completed=completed, total=total)
+            if on_progress is None:
+                self.print_progress(completed=completed, total=total)
 
             for task in asyncio.as_completed(tasks):
                 success, spent_on, error_message = await task
@@ -106,8 +110,14 @@ class RedmineClient:
                 if not success:
                     print()
                     print(f"ERROR: {spent_on} {error_message}")
+                    errors.append((spent_on, error_message))
 
-                self.print_progress(completed=completed, total=total)
+                if on_progress is not None:
+                    on_progress(completed, total)
+                else:
+                    self.print_progress(completed=completed, total=total)
+
+            return errors
 
     async def create_time_entry(
         self,

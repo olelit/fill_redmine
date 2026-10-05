@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List
+from collections.abc import Callable
 
 from clients.redmine_client import RedmineClient
 from configs.user_config import UserConfig
@@ -11,18 +11,25 @@ class BaseImporter(ABC):
         self.user = user
 
     @abstractmethod
-    def create_record_list(self) -> List[DateHoursDTO]:
+    def create_record_list(self) -> list[DateHoursDTO]:
         pass
 
-    async def handle(self):
-        records = self.create_record_list()
-        iid = self.user.issue_id
-        uid = self.user.user_id
-        comment = self.user.comment
-        activity_id = self.user.activity_id
-        api_key = self.user.redmine_api_key
-        await self.update_redmine_activity(
-            uid, iid, comment, activity_id, api_key, records
+    async def handle(
+        self,
+        records: list[DateHoursDTO] | None = None,
+        on_progress: Callable[[int, int], None] | None = None,
+    ) -> list[tuple[str, str]]:
+        if records is None:
+            records = self.create_record_list()
+
+        return await self.update_redmine_activity(
+            self.user.user_id,
+            self.user.issue_id,
+            self.user.comment,
+            self.user.activity_id,
+            self.user.redmine_api_key,
+            records,
+            on_progress=on_progress,
         )
 
     async def update_redmine_activity(
@@ -32,13 +39,15 @@ class BaseImporter(ABC):
         comment: str,
         activity_id: int,
         api_key: str,
-        records: List[DateHoursDTO],
-    ):
+        records: list[DateHoursDTO],
+        on_progress: Callable[[int, int], None] | None = None,
+    ) -> list[tuple[str, str]]:
         client = RedmineClient(api_key=api_key)
-        await client.create_time_entries(
+        return await client.create_time_entries(
             user_id=uid,
             issue_id=iid,
             comment=comment,
             activity_id=activity_id,
             records=records,
+            on_progress=on_progress,
         )
