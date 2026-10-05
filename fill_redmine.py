@@ -46,10 +46,10 @@ async def main(
 
 
 if __name__ == "__main__":
-    repository = UserRepository()
-    migrate_from_user_list(repository)
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--id", type=int, help="Override issue ID for all users")
     args = parser.parse_args()
+
+    repository = UserRepository()
+    migrate_from_user_list(repository)
     asyncio.run(main(override_issue_id=args.id, repo=repository))
