@@ -1,49 +1,36 @@
 import argparse
 import asyncio
 
-from imports.import_factory import create_importer
+from services.import_service import ImportService
 from services.preview_service import PreviewService
-from user_list import USERS
+from storage.migration import migrate_from_user_list
+from storage.user_repository import UserRepository
 
 
-async def main(override_issue_id: int | None = None):
-    enabled_users = [u for u in USERS if u.is_enable]
+async def main(
+    override_issue_id: int | None = None,
+    repo: UserRepository | None = None,
+) -> None:
+    repository = repo if repo is not None else UserRepository()
+    users = repository.list_users()
+    enabled_users = [user for user in users if user.is_enable]
     if not enabled_users:
         print("No enabled users found.")
         return
 
     if override_issue_id:
-        for u in enabled_users:
-            u.issue_id = override_issue_id
+        for user in enabled_users:
+            user.issue_id = override_issue_id
 
     PreviewService.print_header()
 
-    import_data = []
-    issue_info_cache = {}
+    service = ImportService()
+    items = service.prepare(enabled_users)
 
-    for user in enabled_users:
-        importer = create_importer(user)
-        if not importer:
-            continue
+    for item in items:
+        PreviewService.print_preview(item.preview)
 
-        records = importer.create_record_list()
-
-        if not records:
-            continue
-
-        issue_info = PreviewService.get_issue_info(
-            issue_info_cache=issue_info_cache,
-            user=user,
-        )
-        PreviewService.print_user_preview(
-            user=user,
-            records=records,
-            issue_info=issue_info,
-        )
-
-        import_data.append((importer, records))
-
-    if not import_data:
+    if not items:
         print("No time entries to import.")
         return
 
@@ -54,12 +41,15 @@ async def main(override_issue_id: int | None = None):
 
     print("\nStarting import...\n")
 
-    for importer, records in import_data:
-        await importer.handle()
+    summary = await service.run(items)
+    print(f"Import finished: {summary.total} entries, {len(summary.errors)} errors.")
 
 
 if __name__ == "__main__":
+    repository = UserRepository()
+    migrate_from_user_list(repository)
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--id", type=int, help="Override issue ID for all users")
     args = parser.parse_args()
-    asyncio.run(main(override_issue_id=args.id))
+    asyncio.run(main(override_issue_id=args.id, repo=repository))

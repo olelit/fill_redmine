@@ -16,8 +16,10 @@ class TestFillRedmine:
         assert result == "2026-03-31 08:13:51 UTC"
 
     def test_get_issue_info_returns_subject_author_and_url(self):
-        with patch("clients.redmine_client.Config.get_redmine_base_url", return_value="http://redmine/"), \
-             patch("clients.redmine_client.requests.get") as mock_get:
+        with patch(
+            "clients.redmine_client.Config.get_redmine_base_url",
+            return_value="http://redmine/",
+        ), patch("clients.redmine_client.requests.get") as mock_get:
             mock_response = MagicMock()
             mock_response.json.return_value = {
                 "issue": {
@@ -57,21 +59,24 @@ class TestFillRedmine:
         mock_importer.create_record_list.return_value = [
             DateHoursDTO(date="2026-03-31", hours=8),
         ]
-        mock_importer.handle.return_value = None
+        mock_importer.handle.return_value = []
 
-        with patch("fill_redmine.USERS", [user]), \
-             patch("fill_redmine.create_importer", return_value=mock_importer), \
-             patch(
-                 "services.preview_service.IssueService.get_issue_info",
-                 return_value=IssueInfoDTO(
-                     subject="Issue title",
-                     url="http://redmine/issues/123",
-                     author="Oleg",
-                     created_on="2026-03-30 10:00:00 UTC",
-                 ),
-             ), \
-             patch("builtins.input", return_value="n"):
-            await main()
+        mock_repo = MagicMock()
+        mock_repo.list_users.return_value = [user]
+
+        with patch(
+            "services.import_service.create_importer",
+            return_value=mock_importer,
+        ), patch(
+            "services.import_service.PreviewService.get_issue_info",
+            return_value=IssueInfoDTO(
+                subject="Issue title",
+                url="http://redmine/issues/123",
+                author="Oleg",
+                created_on="2026-03-30 10:00:00 UTC",
+            ),
+        ), patch("builtins.input", return_value="n"):
+            await main(repo=mock_repo)
 
         output = capsys.readouterr().out
 

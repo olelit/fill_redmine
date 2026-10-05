@@ -98,12 +98,3 @@ class PreviewService:
                 )
         print(f"Total hours: {preview.total_hours}h")
         print()
-
-    @staticmethod
-    def print_user_preview(
-        user: UserConfig,
-        records: list[DateHoursDTO],
-        issue_info: IssueInfoDTO | None,
-    ) -> None:
-        preview = PreviewService.build_user_preview(user, records, issue_info)
-        PreviewService.print_preview(preview)
