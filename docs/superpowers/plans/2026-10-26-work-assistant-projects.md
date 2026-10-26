@@ -1065,6 +1065,12 @@ def test_tracker_maps_worklogs():
 def test_tracker_is_configured():
     assert RedmineTracker({"api_key": "key", "user_id": 1, "activity_id": 2, "issue_id": 3}).is_configured()
     assert not RedmineTracker({}).is_configured()
+
+
+def test_tracker_is_registered():
+    from trackers.registry import get_tracker_class
+
+    assert get_tracker_class("redmine") is RedmineTracker
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -1117,8 +1123,10 @@ from datetime import date
 from clients.redmine_client import RedmineClient
 from dto.worklog_dto import WorklogDTO
 from trackers.base import BaseTracker, TrackerField
+from trackers.registry import register_tracker
 
 
+@register_tracker
 class RedmineTracker(BaseTracker):
     kind = "redmine"
     label = "Redmine"
@@ -1250,6 +1258,12 @@ def test_tracker_aggregates_minutes_by_day():
 def test_tracker_is_configured():
     assert YoutrackTracker({"access_token": "token"}).is_configured()
     assert not YoutrackTracker({}).is_configured()
+
+
+def test_tracker_is_registered():
+    from trackers.registry import get_tracker_class
+
+    assert get_tracker_class("youtrack") is YoutrackTracker
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -1299,8 +1313,10 @@ from datetime import date, datetime
 from clients.youtrack_client import YoutrackClient
 from dto.worklog_dto import WorklogDTO
 from trackers.base import BaseTracker, TrackerField
+from trackers.registry import register_tracker
 
 
+@register_tracker
 class YoutrackTracker(BaseTracker):
     kind = "youtrack"
     label = "YouTrack"
