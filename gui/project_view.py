@@ -66,16 +66,23 @@ class ProjectView(ttk.Frame):
         )
         self.notebook.add(self.youtrack_view, text="YouTrack → Redmine")
 
-        placeholder = ttk.Frame(self.notebook, padding=12)
-        ttk.Label(
-            placeholder,
-            text="Вкладка плана по коммитам будет добавлена следующим шагом",
-        ).pack()
-        self.notebook.add(placeholder, text="Коммиты и план")
+        from gui.commit_plan_view import CommitPlanView
+
+        self.commit_plan_view = CommitPlanView(
+            self.notebook,
+            self.project,
+            self.repo,
+            self.worker,
+        )
+        self.notebook.add(self.commit_plan_view, text="Коммиты и план")
 
     @property
     def busy(self) -> bool:
-        return self.redmine_view.busy or self.youtrack_view.busy
+        return (
+            self.redmine_view.busy
+            or self.youtrack_view.busy
+            or self.commit_plan_view.busy
+        )
 
     def _back(self) -> None:
         if self.busy and not messagebox.askyesno(
