@@ -87,3 +87,33 @@ class TestGuiWorker:
         worker.drain()
 
         assert received == []
+
+    def test_unregister_does_not_remove_a_different_handler_for_same_kind(self):
+        worker = GuiWorker(FakeRoot())
+        old = []
+        new = []
+        worker.register("job", old.append)
+        worker.register("job", new.append)
+        worker.unregister("job", old.append)
+        worker.send("job", "value")
+        worker.drain()
+        assert new == ["value"]
+
+    def test_destroy_style_unregister_removes_only_the_exact_handler(self):
+        worker = GuiWorker(FakeRoot())
+        log = []
+        progress = []
+        log_handler = log.append
+        progress_handler = progress.append
+        worker.register("redmine_log", log_handler)
+        worker.register("redmine_progress", progress_handler)
+
+        worker.unregister("redmine_log", log_handler)
+
+        worker.send("redmine_log", "message")
+        worker.send("redmine_progress", (1, 2, "issue"))
+        worker.drain()
+
+        assert log == []
+        assert progress == [(1, 2, "issue")]
+

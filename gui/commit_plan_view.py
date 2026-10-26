@@ -1,4 +1,5 @@
 import tkinter as tk
+from collections.abc import Callable
 from datetime import date
 from tkinter import messagebox, ttk
 
@@ -47,21 +48,28 @@ class CommitPlanView(ttk.Frame):
         self.busy = False
         self.ai_ready = False
         self.tracker_vars: dict[str, tk.BooleanVar] = {}
+        self._handlers: dict[str, Callable] = {}
         self._build()
         self._register_handlers()
 
     def _kind(self, suffix: str) -> str:
         return f"plan_{suffix}"
 
+    def _register(self, suffix: str, handler: Callable) -> None:
+        kind = self._kind(suffix)
+        self._handlers[kind] = handler
+        self.worker.register(kind, handler)
+
     def _register_handlers(self) -> None:
-        self.worker.register(self._kind("commits_done"), self._on_commits_done)
-        self.worker.register(self._kind("plan_done"), self._on_plan_done)
-        self.worker.register(self._kind("error"), self._on_error)
-        self.worker.register(self._kind("log"), self.log)
+        self._register("commits_done", self._on_commits_done)
+        self._register("plan_done", self._on_plan_done)
+        self._register("error", self._on_error)
+        self._register("log", self.log)
 
     def destroy(self) -> None:
-        for suffix in ("commits_done", "plan_done", "error", "log"):
-            self.worker.unregister(self._kind(suffix))
+        for kind, handler in self._handlers.items():
+            self.worker.unregister(kind, handler)
+        self._handlers.clear()
         super().destroy()
 
     def _build(self) -> None:

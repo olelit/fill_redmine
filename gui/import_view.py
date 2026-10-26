@@ -1,5 +1,6 @@
 import asyncio
 import tkinter as tk
+from collections.abc import Callable
 from tkinter import messagebox, ttk
 
 from configs.project_config import ProjectConfig
@@ -32,22 +33,29 @@ class ImportView(ttk.LabelFrame):
         self.event_prefix = event_prefix
         self.prepared: list[PreparedImport] = []
         self.busy = False
+        self._handlers: dict[str, Callable] = {}
         self._build()
         self._register_handlers()
 
     def _kind(self, suffix: str) -> str:
         return f"{self.event_prefix}_{suffix}"
 
+    def _register(self, suffix: str, handler: Callable) -> None:
+        kind = self._kind(suffix)
+        self._handlers[kind] = handler
+        self.worker.register(kind, handler)
+
     def _register_handlers(self) -> None:
-        self.worker.register(self._kind("log"), self.log)
-        self.worker.register(self._kind("preview_done"), self._on_preview_done)
-        self.worker.register(self._kind("import_done"), self._on_import_done)
-        self.worker.register(self._kind("error"), self._on_worker_error)
-        self.worker.register(self._kind("progress"), self._on_progress)
+        self._register("log", self.log)
+        self._register("preview_done", self._on_preview_done)
+        self._register("import_done", self._on_import_done)
+        self._register("error", self._on_worker_error)
+        self._register("progress", self._on_progress)
 
     def destroy(self) -> None:
-        for suffix in ("log", "preview_done", "import_done", "error", "progress"):
-            self.worker.unregister(self._kind(suffix))
+        for kind, handler in self._handlers.items():
+            self.worker.unregister(kind, handler)
+        self._handlers.clear()
         super().destroy()
 
     def _build(self) -> None:

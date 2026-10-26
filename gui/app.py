@@ -45,19 +45,25 @@ class MainWindow(tk.Tk):
         if view is not None and hasattr(view, "log"):
             view.log(message)
 
-    def _set_view(self, view: tk.Widget) -> None:
+    def _drop_view(self) -> None:
         if self.current_view is not None:
             self.current_view.destroy()
+            self.current_view = None
+
+    def _set_view(self, view: tk.Widget) -> None:
+        self._drop_view()
         self.current_view = view
         view.pack(fill="both", expand=True)
 
     def show_project_list(self) -> None:
+        self._drop_view()
         self.status.set("готово")
         self._set_view(
             ProjectListView(self.container, self.repo, on_open=self.show_project)
         )
 
     def show_project(self, project: ProjectConfig) -> None:
+        self._drop_view()
         self.status.set(project.name)
         self._set_view(
             ProjectView(
