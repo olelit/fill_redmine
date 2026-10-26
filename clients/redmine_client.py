@@ -1,6 +1,7 @@
 import asyncio
 import xml.etree.ElementTree as et
 from collections.abc import Callable
+from datetime import date
 
 import aiohttp
 import requests
@@ -10,6 +11,8 @@ from dto.date_hours_dto import DateHoursDTO
 
 
 class RedmineClient:
+    PAGE_SIZE = 100
+
     def __init__(self, api_key: str):
         self.api_key = api_key
         self.base_url = (Config.get_redmine_base_url() or "").rstrip("/")
@@ -34,6 +37,34 @@ class RedmineClient:
         except (requests.RequestException, ValueError) as exc:
             print(f"Warning: failed to fetch Redmine issue #{issue_id}: {exc}")
             return None
+
+    def get_time_entries(
+        self, user_id: int, start: date, end: date
+    ) -> list[dict]:
+        url = f"{self.base_url}/time_entries.json"
+        headers = {"X-Redmine-API-Key": self.api_key}
+        entries: list[dict] = []
+        offset = 0
+
+        while True:
+            params = {
+                "user_id": user_id,
+                "from": start.isoformat(),
+                "to": end.isoformat(),
+                "limit": self.PAGE_SIZE,
+                "offset": offset,
+            }
+            response = requests.get(url, headers=headers, params=params, timeout=10)
+            response.raise_for_status()
+            payload = response.json()
+            batch = payload.get("time_entries", [])
+            entries.extend(batch)
+            total = int(payload.get("total_count", len(entries)))
+            if not batch or len(batch) < self.PAGE_SIZE or len(entries) >= total:
+                break
+            offset += self.PAGE_SIZE
+
+        return entries
 
     def get_spent_on_dates(self, user_id: int, issue_id: int) -> set[str]:
         url = f"{self.base_url}/time_entries.xml"

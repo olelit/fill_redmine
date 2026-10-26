@@ -7,6 +7,8 @@ from trackers.registry import (
     register_tracker,
 )
 
+from trackers.redmine import RedmineTracker  # noqa: E402,F401
+
 __all__ = [
     "BaseTracker",
     "TrackerField",
