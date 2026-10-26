@@ -27,15 +27,25 @@ def repo(tmp_path):
     return path
 
 
-def commit(repo, message, author_date, email="oleg@example.com"):
+def commit_with_dates(
+    repo,
+    message,
+    author_date,
+    committer_date,
+    email="oleg@example.com",
+):
     env = os.environ.copy()
     env["GIT_AUTHOR_DATE"] = author_date
-    env["GIT_COMMITTER_DATE"] = author_date
+    env["GIT_COMMITTER_DATE"] = committer_date
     env["GIT_AUTHOR_EMAIL"] = email
     env["GIT_COMMITTER_EMAIL"] = email
     (repo / "file.txt").write_text(message)
     run_git(repo, "add", "file.txt")
     run_git(repo, "commit", "-m", message, env=env)
+
+
+def commit(repo, message, author_date, email="oleg@example.com"):
+    commit_with_dates(repo, message, author_date, author_date, email)
 
 
 def test_lists_commits_from_all_branches(repo):
@@ -79,6 +89,36 @@ def test_filters_by_period(repo):
     )
 
     assert [commit.subject for commit in commits] == ["inside"]
+
+
+def test_email_with_plus_is_matched_exactly(repo):
+    commit(
+        repo,
+        "plus alias",
+        "2026-10-02T10:00:00+00:00",
+        email="oleg+work@example.com",
+    )
+
+    commits = GitClient(repo).list_commits(
+        "oleg+work@example.com", date(2026, 10, 1), date(2026, 10, 5)
+    )
+
+    assert [commit.subject for commit in commits] == ["plus alias"]
+
+
+def test_filters_by_author_date_not_committer_date(repo):
+    commit_with_dates(
+        repo,
+        "rebased",
+        author_date="2026-10-02T10:00:00+00:00",
+        committer_date="2026-09-01T10:00:00+00:00",
+    )
+
+    commits = GitClient(repo).list_commits(
+        "oleg@example.com", date(2026, 10, 1), date(2026, 10, 5)
+    )
+
+    assert [commit.subject for commit in commits] == ["rebased"]
 
 
 def test_get_config_email(repo):

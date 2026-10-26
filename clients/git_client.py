@@ -1,5 +1,6 @@
+import re
 import subprocess
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from dto.git_commit_dto import GitCommitDTO
@@ -50,19 +51,23 @@ class GitClient:
             raise GitError("Не задан email автора коммитов")
         self.validate()
 
+        # Git treats --author as a regex, so the email must be escaped. Extended
+        # regex syntax is required: in the default basic syntax "\+" means
+        # "one or more g", which would silently drop addresses like
+        # "name+tag@example.com".
+        author_pattern = re.escape(email)
         output = self._run(
             "log",
             "--all",
-            f"--author={email}",
-            f"--since={start.isoformat()}T00:00:00",
-            f"--until={end.isoformat()}T23:59:59",
+            "--extended-regexp",
+            f"--author={author_pattern}",
             "--date=iso-strict",
             "--pretty=format:"
             f"%H{FIELD_SEPARATOR}%an{FIELD_SEPARATOR}%ae{FIELD_SEPARATOR}"
             f"%ad{FIELD_SEPARATOR}%s{FIELD_SEPARATOR}%b{RECORD_SEPARATOR}",
         )
 
-        commits: dict[str, GitCommitDTO] = {}
+        commits: dict[str, tuple[datetime, GitCommitDTO]] = {}
         for raw_record in output.split(RECORD_SEPARATOR):
             record = raw_record.strip("\n")
             if not record:
@@ -73,13 +78,29 @@ class GitClient:
             commit_hash, author_name, author_email, authored_at, subject, body = parts
             if author_email.strip().lower() != email.lower():
                 continue
-            commits[commit_hash] = GitCommitDTO(
-                hash=commit_hash,
-                author_name=author_name,
-                author_email=author_email,
-                date=authored_at,
-                subject=subject,
-                body=body.strip(),
+            try:
+                authored_dt = datetime.fromisoformat(authored_at)
+            except ValueError:
+                continue
+            # Period filtering uses the author date (what the report shows), not
+            # the committer date that --since/--until would apply.
+            if not start <= authored_dt.date() <= end:
+                continue
+            commits[commit_hash] = (
+                authored_dt,
+                GitCommitDTO(
+                    hash=commit_hash,
+                    author_name=author_name,
+                    author_email=author_email,
+                    date=authored_at,
+                    subject=subject,
+                    body=body.strip(),
+                ),
             )
 
-        return sorted(commits.values(), key=lambda item: item.date, reverse=True)
+        return [
+            commit
+            for _, commit in sorted(
+                commits.values(), key=lambda item: item[0], reverse=True
+            )
+        ]
