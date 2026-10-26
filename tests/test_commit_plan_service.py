@@ -121,12 +121,27 @@ def test_generates_plan_and_caps_hours():
     assert second.planned_hours == 0
 
 
-def test_weekend_and_excluded_days_have_zero_target():
+def test_excluded_weekday_has_zero_target():
     payload = {"summary": "ok", "days": []}
     service = make_service(payload)
 
     plan = service.generate(
-        make_project(exclude_dates=["2026-10-03"]),
+        make_project(exclude_dates=["2026-10-05"]),
+        date(2026, 10, 5),
+        date(2026, 10, 6),
+        ["fake_plan"],
+        [],
+    )
+
+    assert [day.deficit_hours for day in plan.days] == [0, 8]
+
+
+def test_weekend_has_zero_target():
+    payload = {"summary": "ok", "days": []}
+    service = make_service(payload)
+
+    plan = service.generate(
+        make_project(),
         date(2026, 10, 3),
         date(2026, 10, 4),
         ["fake_plan"],
