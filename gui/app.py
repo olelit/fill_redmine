@@ -1,35 +1,28 @@
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from gui.import_view import ImportView
-from gui.user_list_view import UserListView
+from configs.project_config import ProjectConfig
+from gui.project_list_view import ProjectListView
+from gui.project_view import ProjectView
 from gui.worker import GuiWorker
 from services.import_service import ImportService
-from storage.user_repository import UserRepository
+from storage.project_repository import ProjectRepository
 
 
 class MainWindow(tk.Tk):
-    def __init__(self, repo: UserRepository):
+    def __init__(self, repo: ProjectRepository):
         super().__init__()
         self.repo = repo
         self.worker = GuiWorker(self)
-        self.service = ImportService(log=lambda message: self.worker.send("log", message))
+        self.service = ImportService(log=lambda message: self.status.set(message))
+        self.current_view: tk.Widget | None = None
 
-        self.title("Fill Redmine")
-        self.geometry("1000x760")
-        self.minsize(900, 600)
+        self.title("Work Assistant")
+        self.geometry("1100x780")
+        self.minsize(900, 620)
 
-        self.user_list_view = UserListView(self, repo)
-        self.user_list_view.pack(fill="both", expand=False, padx=6, pady=6)
-
-        self.import_view = ImportView(
-            self,
-            service=self.service,
-            worker=self.worker,
-            get_users=self.user_list_view.users_for_action,
-        )
-        self.import_view.pack(fill="both", expand=True, padx=6, pady=(0, 6))
-
+        self.container = ttk.Frame(self)
+        self.container.pack(fill="both", expand=True)
         self.status = tk.StringVar(value="готово")
         ttk.Label(
             self,
@@ -40,10 +33,38 @@ class MainWindow(tk.Tk):
         ).pack(fill="x", side="bottom")
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.show_project_list()
+
+    def _set_view(self, view: tk.Widget) -> None:
+        if self.current_view is not None:
+            self.current_view.destroy()
+        self.current_view = view
+        view.pack(fill="both", expand=True)
+
+    def show_project_list(self) -> None:
+        self.status.set("готово")
+        self._set_view(
+            ProjectListView(self.container, self.repo, on_open=self.show_project)
+        )
+
+    def show_project(self, project: ProjectConfig) -> None:
+        self.status.set(project.name)
+        self._set_view(
+            ProjectView(
+                self.container,
+                project=project,
+                repo=self.repo,
+                worker=self.worker,
+                service=self.service,
+                on_back=self.show_project_list,
+                on_project_updated=self.show_project,
+            )
+        )
 
     def _on_close(self) -> None:
-        if self.import_view.busy:
-            question = "Импорт выполняется. Закрыть окно?"
-            if not messagebox.askyesno("Fill Redmine", question, parent=self):
-                return
+        busy = bool(getattr(self.current_view, "busy", False))
+        if busy and not messagebox.askyesno(
+            "Work Assistant", "Работа выполняется. Закрыть окно?", parent=self
+        ):
+            return
         self.destroy()
