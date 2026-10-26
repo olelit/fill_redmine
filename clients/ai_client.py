@@ -1,6 +1,6 @@
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import requests
 
@@ -15,7 +15,7 @@ class AiError(RuntimeError):
 class AiConfig:
     base_url: str
     model: str
-    api_key: str
+    api_key: str = field(repr=False)
 
 
 def resolve_ai_config(project: ProjectConfig) -> AiConfig:
@@ -58,22 +58,25 @@ class AiClient:
         self.config = config
 
     def complete_json(self, system_prompt: str, user_prompt: str) -> dict:
-        response = requests.post(
-            f"{self.config.base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {self.config.api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": self.config.model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                "temperature": 0.2,
-            },
-            timeout=120,
-        )
+        try:
+            response = requests.post(
+                f"{self.config.base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.config.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.config.model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "temperature": 0.2,
+                },
+                timeout=120,
+            )
+        except requests.RequestException as exc:
+            raise AiError(f"Ошибка сети при запросе к ИИ: {exc}") from exc
         if not 200 <= response.status_code < 300:
             raise AiError(
                 f"HTTP {response.status_code}: {response.text[:500]}"
@@ -83,4 +86,6 @@ class AiClient:
             content = response.json()["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError, ValueError) as exc:
             raise AiError(f"Неожиданный ответ ИИ: {exc}") from exc
+        if not isinstance(content, str):
+            raise AiError("ИИ вернул пустой или нестроковый ответ")
         return parse_json_object(content)

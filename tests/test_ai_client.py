@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from clients.ai_client import (
     AiClient,
@@ -108,3 +109,31 @@ def test_invalid_json_raises():
     with patch("clients.ai_client.requests.post", return_value=response):
         with pytest.raises(AiError, match="JSON"):
             client.complete_json("system", "user")
+
+
+def test_network_error_raises_ai_error():
+    client = AiClient(AiConfig("https://api.example/v1", "model", "key"))
+
+    with patch(
+        "clients.ai_client.requests.post",
+        side_effect=requests.RequestException("offline"),
+    ):
+        with pytest.raises(AiError, match="Ошибка сети"):
+            client.complete_json("system", "user")
+
+
+def test_null_content_raises():
+    client = AiClient(AiConfig("https://api.example/v1", "model", "key"))
+    response = MagicMock()
+    response.status_code = 200
+    response.json.return_value = {
+        "choices": [{"message": {"content": None}}]
+    }
+
+    with patch("clients.ai_client.requests.post", return_value=response):
+        with pytest.raises(AiError):
+            client.complete_json("system", "user")
+
+
+def test_repr_hides_api_key():
+    assert "secret-key" not in repr(AiConfig("url", "model", "secret-key"))
