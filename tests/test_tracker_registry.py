@@ -16,10 +16,12 @@ from trackers.registry import (
 
 @pytest.fixture(autouse=True)
 def _isolated_registry():
-    """Глобальный реестр изолируется между тестами."""
+    """Глобальный реестр изолируется между тестами и восстанавливается после них."""
+    saved = dict(registry._REGISTRY)
     registry._REGISTRY.clear()
     yield
     registry._REGISTRY.clear()
+    registry._REGISTRY.update(saved)
 
 
 class FakeTracker(BaseTracker):
