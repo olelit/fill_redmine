@@ -1,7 +1,6 @@
 import argparse
 import asyncio
 
-from configs.project_config import ProjectConfig
 from dto.import_action import ImportAction
 from services.import_service import ImportService
 from services.preview_service import PreviewService

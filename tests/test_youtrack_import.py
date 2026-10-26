@@ -43,13 +43,11 @@ def test_aggregates_hours_by_date(project):
 
 def test_uses_bearer_token(project):
     importer = YoutrackImporter(project)
-    with patch(
-        "imports.youtrack_import.YoutrackClient.get_work_items",
-        return_value=[],
-    ) as mock_get:
+    with patch("imports.youtrack_import.YoutrackClient") as mock_client:
+        mock_client.return_value.get_work_items.return_value = []
         importer.create_record_list()
 
-    mock_get.assert_called_once()
+    mock_client.assert_called_once_with(access_token="test_token")
 
 
 def test_requests_current_month(project):
