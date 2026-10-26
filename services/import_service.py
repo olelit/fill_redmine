@@ -1,8 +1,9 @@
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from configs.user_config import UserConfig
+from configs.project_config import ProjectConfig
 from dto.date_hours_dto import DateHoursDTO
+from dto.import_action import ImportAction
 from dto.issue_info_dto import IssueInfoDTO
 from dto.preview_dto import PreviewDTO
 from imports.base_importer import BaseImporter
@@ -12,7 +13,8 @@ from services.preview_service import PreviewService
 
 @dataclass
 class PreparedImport:
-    user: UserConfig
+    project: ProjectConfig
+    action: ImportAction
     importer: BaseImporter
     records: list[DateHoursDTO]
     preview: PreviewDTO
@@ -34,56 +36,61 @@ class ImportService:
     def __init__(self, log: Callable[[str], None] = print):
         self.log = log
 
-    def prepare(self, users: list[UserConfig]) -> PrepareResult:
+    def prepare(
+        self, project: ProjectConfig, action: ImportAction
+    ) -> PrepareResult:
         result = PrepareResult()
+        try:
+            importer = create_importer(project, action)
+            records = importer.create_record_list()
+        except Exception as exc:
+            message = f"ошибка получения записей: {exc}"
+            self.log(f"{project.name}: {message}")
+            result.errors.append(self._error_preview(project, action, message))
+            return result
+
+        if not records:
+            self.log(f"{project.name}: нет записей")
+            return result
+
         issue_info_cache: dict[int, IssueInfoDTO | None] = {}
-
-        for user in users:
-            importer = create_importer(user)
-            if importer is None:
-                message = f"неизвестный driver «{user.driver}»"
-                self.log(f"{user.name}: {message}, пропуск")
-                result.errors.append(self._error_preview(user, message))
-                continue
-
-            try:
-                records = importer.create_record_list()
-            except Exception as exc:
-                message = f"ошибка получения записей: {exc}"
-                self.log(f"{user.name}: {message}")
-                result.errors.append(self._error_preview(user, message))
-                continue
-
-            if not records:
-                self.log(f"{user.name}: нет записей")
-                continue
-
-            issue_info = PreviewService.get_issue_info(
-                issue_info_cache=issue_info_cache,
-                user=user,
-            )
-            preview = PreviewService.build_user_preview(
-                user=user,
+        issue_info = PreviewService.get_issue_info(issue_info_cache, project)
+        preview = PreviewService.build_preview(
+            project,
+            action.value,
+            records,
+            issue_info,
+        )
+        result.items.append(
+            PreparedImport(
+                project=project,
+                action=action,
+                importer=importer,
                 records=records,
-                issue_info=issue_info,
+                preview=preview,
             )
-            result.items.append(
-                PreparedImport(
-                    user=user,
-                    importer=importer,
-                    records=records,
-                    preview=preview,
-                )
-            )
-
+        )
         return result
 
+    def prepare_many(
+        self, projects: list[ProjectConfig], action: ImportAction
+    ) -> PrepareResult:
+        merged = PrepareResult()
+        for project in projects:
+            result = self.prepare(project, action)
+            merged.items.extend(result.items)
+            merged.errors.extend(result.errors)
+        return merged
+
     @staticmethod
-    def _error_preview(user: UserConfig, message: str) -> PreviewDTO:
-        return PreviewService.build_user_preview(
-            user=user,
-            records=[],
-            issue_info=None,
+    def _error_preview(
+        project: ProjectConfig, action: ImportAction, message: str
+    ) -> PreviewDTO:
+        return PreviewService.build_preview(
+            project,
+            action.value,
+            [],
+            None,
             error=message,
         )
 
@@ -101,7 +108,7 @@ class ImportService:
                 completed: int,
                 item_total: int,
                 base: int = completed_base,
-                name: str = item.user.name,
+                name: str = item.project.name,
             ) -> None:
                 if progress_cb is not None:
                     progress_cb(base + completed, total, name)
@@ -111,7 +118,7 @@ class ImportService:
                 on_progress=on_progress if progress_cb is not None else None,
             )
             for spent_on, message in item_errors or []:
-                errors.append((item.user.name, spent_on, message))
+                errors.append((item.project.name, spent_on, message))
             completed_base += len(item.records)
 
         return ImportSummary(total=total, errors=errors)

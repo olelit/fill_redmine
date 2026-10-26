@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import List
 
 from clients.youtrack_client import YoutrackClient
 from dto.date_hours_dto import DateHoursDTO
@@ -7,28 +6,27 @@ from imports.base_importer import BaseImporter
 
 
 class YoutrackImporter(BaseImporter):
-    def create_record_list(self) -> List[DateHoursDTO]:
+    def create_record_list(self) -> list[DateHoursDTO]:
+        self.redmine_config()
+        token = self.youtrack_token()
         now = datetime.now()
         first_day = datetime(now.year, now.month, 1)
-
         if now.month == 12:
             end_date = datetime(now.year + 1, 1, 1)
         else:
             end_date = datetime(now.year, now.month + 1, 1)
 
-        client = YoutrackClient(access_token=self.user.youtrack_access_token)
+        client = YoutrackClient(access_token=token)
         data = client.get_work_items(start_date=first_day, end_date=end_date)
-        result = {}
+        result: dict[str, float] = {}
         for item in data:
-            date = datetime.fromtimestamp(item["date"] / 1000).strftime("%Y-%m-%d")
+            item_date = datetime.fromtimestamp(item["date"] / 1000).strftime(
+                "%Y-%m-%d"
+            )
+            minutes = float((item.get("duration") or {}).get("minutes", 0))
+            result[item_date] = result.get(item_date, 0) + minutes / 60
 
-            if date not in result:
-                result[date] = 0
-
-            result[date] += item["duration"]["minutes"] / 60
-
-        dto_list: list[DateHoursDTO] = [
-            DateHoursDTO(date=d, hours=h) for d, h in sorted(result.items())
+        return [
+            DateHoursDTO(date=item_date, hours=hours)
+            for item_date, hours in sorted(result.items())
         ]
-
-        return dto_list

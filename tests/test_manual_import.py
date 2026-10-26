@@ -1,78 +1,78 @@
 from datetime import date
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from configs.user_config import UserConfig, MANUAL
-from imports.manual_import import ManualImporter
+from configs.project_config import ProjectConfig
 from dto.date_hours_dto import DateHoursDTO
+from imports.manual_import import ManualImporter
 
 
-class TestManualImporter:
-    @pytest.fixture
-    def user(self):
-        return UserConfig(
-            is_enable=True,
-            name="Test",
-            redmine_api_key="test_api_key",
-            user_id=1,
-            activity_id=9,
-            comment="test",
-            issue_id=123,
-            driver=MANUAL,
-            youtrack_access_token="",
-            exclude_dates=["2026-02-15"],
-        )
+@pytest.fixture
+def project():
+    return ProjectConfig(
+        name="Проект",
+        exclude_dates=["2026-02-15"],
+        trackers={
+            "redmine": {
+                "api_key": "test_api_key",
+                "user_id": 1,
+                "activity_id": 9,
+                "issue_id": 123,
+                "comment": "test",
+            }
+        },
+    )
 
-    @pytest.fixture
-    def importer(self, user):
-        return ManualImporter(user)
 
-    def test_create_record_list_returns_list_of_date_hours_dto(self, importer):
-        with patch.object(importer, "get_times", return_value=set()):
-            records = importer.create_record_list()
-            assert isinstance(records, list)
-            if records:
-                assert isinstance(records[0], DateHoursDTO)
+@pytest.fixture
+def importer(project):
+    return ManualImporter(project)
 
-    def test_create_record_list_excludes_weekends(self, importer):
-        with patch.object(importer, "get_times", return_value=set()):
-            records = importer.create_record_list()
-            for record in records:
-                d = date.fromisoformat(record.date)
-                assert d.weekday() < 5
 
-    def test_create_record_list_excludes_exclude_dates(self, importer):
-        with patch.object(importer, "get_times", return_value=set()):
-            records = importer.create_record_list()
-            dates = [r.date for r in records]
-            assert "2026-02-15" not in dates
+def test_create_record_list_returns_date_hours_dto(importer):
+    with patch.object(importer, "get_times", return_value=set()):
+        records = importer.create_record_list()
 
-    def test_create_record_list_excludes_already_spent_dates(self, importer):
-        with patch.object(importer, "get_times", return_value={"2026-02-01"}):
-            records = importer.create_record_list()
-            dates = [r.date for r in records]
-            assert "2026-02-01" not in dates
+    assert isinstance(records, list)
+    assert all(isinstance(record, DateHoursDTO) for record in records)
 
-    def test_get_times_parses_xml_response(self, importer):
-        xml_response = """<?xml version="1.0" encoding="UTF-8"?>
-        <time_entries type="array">
-            <time_entry>
-                <spent_on>2026-02-01</spent_on>
-            </time_entry>
-            <time_entry>
-                <spent_on>2026-02-02</spent_on>
-            </time_entry>
-        </time_entries>"""
-        
-        with patch("clients.redmine_client.requests.get") as mock_get, \
-             patch("clients.redmine_client.Config.get_redmine_base_url", return_value="http://redmine"):
-            mock_response = MagicMock()
-            mock_response.text = xml_response
-            mock_response.raise_for_status = MagicMock()
-            mock_get.return_value = mock_response
-            
-            result = importer.get_times()
-            
-            assert "2026-02-01" in result
-            assert "2026-02-02" in result
+
+def test_create_record_list_excludes_weekends(importer):
+    with patch.object(importer, "get_times", return_value=set()):
+        records = importer.create_record_list()
+
+    assert all(date.fromisoformat(record.date).weekday() < 5 for record in records)
+
+
+def test_create_record_list_excludes_exclude_dates(importer):
+    with patch.object(importer, "get_times", return_value=set()):
+        records = importer.create_record_list()
+
+    assert "2026-02-15" not in [record.date for record in records]
+
+
+def test_create_record_list_excludes_already_spent_dates(importer):
+    with patch.object(importer, "get_times", return_value={"2026-02-02"}):
+        records = importer.create_record_list()
+
+    assert "2026-02-02" not in [record.date for record in records]
+
+
+def test_get_times_uses_redmine_config(importer):
+    with patch(
+        "imports.manual_import.RedmineClient.get_spent_on_dates",
+        return_value={"2026-02-01"},
+    ) as mock_get:
+        result = importer.get_times()
+
+    assert result == {"2026-02-01"}
+    mock_get.assert_called_once_with(user_id=1, issue_id=123)
+
+
+def test_missing_redmine_config_raises(project):
+    project.trackers = {}
+    importer = ManualImporter(project)
+
+    with pytest.raises(ValueError, match="Redmine"):
+        importer.create_record_list()

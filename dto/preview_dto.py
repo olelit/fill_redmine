@@ -10,11 +10,10 @@ class DateRangeDTO:
 
 @dataclass
 class PreviewDTO:
-    user_name: str
-    user_id: int
-    driver: str
-    comment: str
+    project_name: str
+    action: str
     issue_id: int
+    comment: str = ""
     issue_subject: str | None = None
     issue_url: str | None = None
     issue_author: str | None = None

@@ -1,24 +1,32 @@
+from unittest.mock import patch
+
 import pytest
 
-from configs.user_config import MANUAL, UserConfig
+from configs.project_config import ProjectConfig
 from dto.date_hours_dto import DateHoursDTO
+from dto.import_action import ImportAction
 from dto.issue_info_dto import IssueInfoDTO
-from services.import_service import ImportService, PrepareResult, PreparedImport
+from services.import_service import (
+    ImportService,
+    ImportSummary,
+    PrepareResult,
+    PreparedImport,
+)
 from services.preview_service import PreviewService
 
 
-def make_user(name="Олег") -> UserConfig:
-    return UserConfig(
-        is_enable=True,
+def make_project(name="Олег") -> ProjectConfig:
+    return ProjectConfig(
         name=name,
-        redmine_api_key="key",
-        user_id=16,
-        activity_id=9,
-        comment="development",
-        issue_id=2682,
-        driver=MANUAL,
-        youtrack_access_token="",
-        exclude_dates=[],
+        trackers={
+            "redmine": {
+                "api_key": "key",
+                "user_id": 16,
+                "activity_id": 9,
+                "issue_id": 2682,
+                "comment": "development",
+            }
+        },
     )
 
 
@@ -33,8 +41,8 @@ def make_issue_info() -> IssueInfoDTO:
 
 class FakeImporter:
     def __init__(self, records=None, errors=None):
-        self.records = records if records is not None else []
-        self.errors = errors if errors is not None else []
+        self.records = records or []
+        self.errors = errors or []
         self.create_calls = 0
         self.handle_calls = []
         self.progress_callbacks = []
@@ -52,159 +60,119 @@ class FakeImporter:
         return list(self.errors)
 
 
-class TestImportServicePrepare:
-    def test_prepare_builds_preview_without_refetching_records(self, monkeypatch):
-        service = ImportService(log=lambda message: None)
-        records = [DateHoursDTO(date="2026-10-01", hours=8)]
-        importer = FakeImporter(records=records)
-        monkeypatch.setattr("services.import_service.create_importer", lambda user: importer)
-        monkeypatch.setattr(
-            "services.import_service.PreviewService.get_issue_info",
-            lambda issue_info_cache, user: make_issue_info(),
-        )
+def test_prepare_builds_preview(monkeypatch):
+    importer = FakeImporter(records=[DateHoursDTO(date="2026-10-01", hours=8)])
+    monkeypatch.setattr(
+        "services.import_service.create_importer",
+        lambda project, action: importer,
+    )
+    monkeypatch.setattr(
+        "services.import_service.PreviewService.get_issue_info",
+        lambda cache, project: make_issue_info(),
+    )
 
-        result = service.prepare([make_user()])
+    result = ImportService(log=lambda message: None).prepare(
+        make_project(), ImportAction.REDMINE_FILL
+    )
 
-        assert len(result.items) == 1
-        assert result.errors == []
-        assert importer.create_calls == 1
-        assert result.items[0].preview.user_name == "Олег"
-        assert result.items[0].preview.issue_subject == "Тема"
-        assert result.items[0].records == records
-
-    def test_prepare_reports_unknown_driver_as_error_preview(self, monkeypatch):
-        logs = []
-        service = ImportService(log=logs.append)
-        monkeypatch.setattr("services.import_service.create_importer", lambda user: None)
-
-        result = service.prepare([make_user()])
-
-        assert result.items == []
-        assert len(result.errors) == 1
-        error_preview = result.errors[0]
-        assert error_preview.user_name == "Олег"
-        assert error_preview.user_id == 16
-        assert error_preview.issue_id == 2682
-        assert "driver" in error_preview.error
-        assert error_preview.total_hours == 0
-        assert any("driver" in message for message in logs)
-
-    def test_prepare_skips_user_without_records(self, monkeypatch):
-        service = ImportService(log=lambda message: None)
-        importer = FakeImporter(records=[])
-        monkeypatch.setattr("services.import_service.create_importer", lambda user: importer)
-
-        result = service.prepare([make_user()])
-
-        assert result.items == []
-        assert result.errors == []
-        assert importer.create_calls == 1
-
-    def test_prepare_reports_fetch_errors_as_error_previews(self, monkeypatch):
-        logs = []
-
-        class BrokenImporter:
-            def create_record_list(self):
-                raise RuntimeError("network down")
-
-        monkeypatch.setattr(
-            "services.import_service.create_importer", lambda user: BrokenImporter()
-        )
-
-        result = ImportService(log=logs.append).prepare([make_user()])
-
-        assert result.items == []
-        assert len(result.errors) == 1
-        assert "network down" in result.errors[0].error
-        assert any("network down" in message for message in logs)
-
-    def test_prepare_keeps_successful_users_alongside_errors(self, monkeypatch):
-        users = [make_user(name="Первый"), make_user(name="Второй")]
-        importer = FakeImporter(records=[DateHoursDTO(date="2026-10-01", hours=8)])
-
-        def fake_create_importer(user):
-            return importer if user.name == "Первый" else None
-
-        monkeypatch.setattr("services.import_service.create_importer", fake_create_importer)
-        monkeypatch.setattr(
-            "services.import_service.PreviewService.get_issue_info",
-            lambda issue_info_cache, user: make_issue_info(),
-        )
-
-        result = ImportService(log=lambda message: None).prepare(users)
-
-        assert isinstance(result, PrepareResult)
-        assert [item.user.name for item in result.items] == ["Первый"]
-        assert [preview.user_name for preview in result.errors] == ["Второй"]
+    assert len(result.items) == 1
+    assert result.errors == []
+    assert result.items[0].project.name == "Олег"
+    assert result.items[0].action is ImportAction.REDMINE_FILL
+    assert result.items[0].preview.project_name == "Олег"
 
 
-class TestImportServiceRun:
-    @pytest.mark.asyncio
-    async def test_run_reports_global_progress_and_collects_errors(self):
-        user_one = make_user(name="Первый")
-        user_two = make_user(name="Второй")
-        importer_one = FakeImporter(
-            records=[
-                DateHoursDTO(date="2026-10-01", hours=8),
-                DateHoursDTO(date="2026-10-02", hours=8),
-            ]
-        )
-        importer_two = FakeImporter(
-            records=[DateHoursDTO(date="2026-10-01", hours=4)],
-            errors=[("2026-10-01", "500 error")],
-        )
-        service = ImportService(log=lambda message: None)
-        progress = []
+def test_prepare_reports_importer_error(monkeypatch):
+    class BrokenImporter:
+        def create_record_list(self):
+            raise RuntimeError("network down")
 
-        items = [
-            PreparedImport(
-                user=user_one,
-                importer=importer_one,
-                records=importer_one.records,
-                preview=PreviewService.build_user_preview(user_one, importer_one.records, None),
-            ),
-            PreparedImport(
-                user=user_two,
-                importer=importer_two,
-                records=importer_two.records,
-                preview=PreviewService.build_user_preview(user_two, importer_two.records, None),
-            ),
-        ]
+    monkeypatch.setattr(
+        "services.import_service.create_importer",
+        lambda project, action: BrokenImporter(),
+    )
 
-        summary = await service.run(
-            items,
-            progress_cb=lambda completed, total, name: progress.append(
-                (completed, total, name)
+    result = ImportService(log=lambda message: None).prepare(
+        make_project(), ImportAction.REDMINE_FILL
+    )
+
+    assert result.items == []
+    assert len(result.errors) == 1
+    assert "network down" in result.errors[0].error
+
+
+def test_prepare_skips_empty_records(monkeypatch):
+    importer = FakeImporter(records=[])
+    monkeypatch.setattr(
+        "services.import_service.create_importer",
+        lambda project, action: importer,
+    )
+
+    result = ImportService(log=lambda message: None).prepare(
+        make_project(), ImportAction.REDMINE_FILL
+    )
+
+    assert result.items == []
+    assert result.errors == []
+
+
+def test_prepare_many_merges(monkeypatch):
+    importer = FakeImporter(records=[DateHoursDTO(date="2026-10-01", hours=8)])
+    monkeypatch.setattr(
+        "services.import_service.create_importer",
+        lambda project, action: importer,
+    )
+    monkeypatch.setattr(
+        "services.import_service.PreviewService.get_issue_info",
+        lambda cache, project: None,
+    )
+
+    result = ImportService(log=lambda message: None).prepare_many(
+        [make_project("A"), make_project("B")], ImportAction.REDMINE_FILL
+    )
+
+    assert [item.project.name for item in result.items] == ["A", "B"]
+
+
+@pytest.mark.asyncio
+async def test_run_reports_progress_and_errors():
+    project = make_project()
+    importer = FakeImporter(
+        records=[
+            DateHoursDTO(date="2026-10-01", hours=8),
+            DateHoursDTO(date="2026-10-02", hours=8),
+        ],
+        errors=[("2026-10-01", "500 error")],
+    )
+    items = [
+        PreparedImport(
+            project=project,
+            action=ImportAction.REDMINE_FILL,
+            importer=importer,
+            records=importer.records,
+            preview=PreviewService.build_preview(
+                project, "redmine_fill", importer.records, None
             ),
         )
+    ]
+    progress = []
 
-        assert progress == [(1, 3, "Первый"), (2, 3, "Первый"), (3, 3, "Второй")]
-        assert summary.total == 3
-        assert summary.errors == [("Второй", "2026-10-01", "500 error")]
-        assert importer_one.handle_calls == [importer_one.records]
-        assert importer_two.handle_calls == [importer_two.records]
+    summary = await ImportService(log=lambda message: None).run(
+        items,
+        progress_cb=lambda completed, total, name: progress.append(
+            (completed, total, name)
+        ),
+    )
 
-    @pytest.mark.asyncio
-    async def test_run_without_progress_callback_passes_none_to_importer(self):
-        user = make_user()
-        importer = FakeImporter(records=[DateHoursDTO(date="2026-10-01", hours=8)])
-        service = ImportService(log=lambda message: None)
-        items = [
-            PreparedImport(
-                user=user,
-                importer=importer,
-                records=importer.records,
-                preview=PreviewService.build_user_preview(user, importer.records, None),
-            )
-        ]
+    assert progress == [(1, 2, "Олег"), (2, 2, "Олег")]
+    assert summary == ImportSummary(
+        total=2, errors=[("Олег", "2026-10-01", "500 error")]
+    )
 
-        await service.run(items)
 
-        assert importer.progress_callbacks == [None]
+@pytest.mark.asyncio
+async def test_run_without_items_returns_empty_summary():
+    summary = await ImportService(log=lambda message: None).run([])
 
-    @pytest.mark.asyncio
-    async def test_run_without_items_returns_empty_summary(self):
-        summary = await ImportService(log=lambda message: None).run([])
-
-        assert summary.total == 0
-        assert summary.errors == []
+    assert summary.total == 0
+    assert summary.errors == []

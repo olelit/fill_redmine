@@ -1,53 +1,45 @@
 import pytest
 
-from configs.user_config import UserConfig, MANUAL, YOUTRACK
+from configs.project_config import ProjectConfig
+from dto.import_action import ImportAction
 from imports.import_factory import create_importer
 from imports.manual_import import ManualImporter
 from imports.youtrack_import import YoutrackImporter
 
 
-class TestImportFactory:
-    def test_create_importer_returns_manual_importer_for_manual_driver(self):
-        user = UserConfig(
-            is_enable=True,
-            name="Test",
-            redmine_api_key="key",
-            user_id=1,
-            activity_id=1,
-            comment="test",
-            issue_id=1,
-            driver=MANUAL,
-            youtrack_access_token="",
-        )
-        importer = create_importer(user)
-        assert isinstance(importer, ManualImporter)
+def make_project(**overrides) -> ProjectConfig:
+    data = dict(
+        name="Проект",
+        exclude_dates=[],
+        trackers={
+            "redmine": {
+                "api_key": "key",
+                "user_id": 16,
+                "activity_id": 9,
+                "issue_id": 2682,
+                "comment": "dev",
+            },
+            "youtrack": {"access_token": "token"},
+        },
+    )
+    data.update(overrides)
+    return ProjectConfig(**data)
 
-    def test_create_importer_returns_youtrack_importer_for_youtrack_driver(self):
-        user = UserConfig(
-            is_enable=True,
-            name="Test",
-            redmine_api_key="key",
-            user_id=1,
-            activity_id=1,
-            comment="test",
-            issue_id=1,
-            driver=YOUTRACK,
-            youtrack_access_token="token",
-        )
-        importer = create_importer(user)
-        assert isinstance(importer, YoutrackImporter)
 
-    def test_create_importer_returns_none_for_unknown_driver(self):
-        user = UserConfig(
-            is_enable=True,
-            name="Test",
-            redmine_api_key="key",
-            user_id=1,
-            activity_id=1,
-            comment="test",
-            issue_id=1,
-            driver="unknown",
-            youtrack_access_token="",
-        )
-        importer = create_importer(user)
-        assert importer is None
+def test_creates_manual_importer():
+    assert isinstance(
+        create_importer(make_project(), ImportAction.REDMINE_FILL),
+        ManualImporter,
+    )
+
+
+def test_creates_youtrack_importer():
+    assert isinstance(
+        create_importer(make_project(), ImportAction.YOUTRACK_TRANSFER),
+        YoutrackImporter,
+    )
+
+
+def test_unknown_action_raises():
+    with pytest.raises(ValueError):
+        create_importer(make_project(), "unknown")

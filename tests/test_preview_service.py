@@ -1,24 +1,24 @@
-from configs.user_config import MANUAL, YOUTRACK, UserConfig
+from configs.project_config import ProjectConfig
 from dto.date_hours_dto import DateHoursDTO
 from dto.issue_info_dto import IssueInfoDTO
 from services.preview_service import PreviewService
 
 
-def make_user(**overrides) -> UserConfig:
+def make_project(**overrides) -> ProjectConfig:
     data = dict(
-        is_enable=True,
         name="Олег",
-        redmine_api_key="key",
-        user_id=16,
-        activity_id=9,
-        comment="development",
-        issue_id=2682,
-        driver=MANUAL,
-        youtrack_access_token="",
-        exclude_dates=[],
+        trackers={
+            "redmine": {
+                "api_key": "key",
+                "user_id": 16,
+                "activity_id": 9,
+                "issue_id": 2682,
+                "comment": "development",
+            }
+        },
     )
     data.update(overrides)
-    return UserConfig(**data)
+    return ProjectConfig(**data)
 
 
 def make_issue_info() -> IssueInfoDTO:
@@ -30,83 +30,57 @@ def make_issue_info() -> IssueInfoDTO:
     )
 
 
-class TestBuildUserPreview:
-    def test_groups_consecutive_days_with_equal_hours(self):
-        records = [
-            DateHoursDTO(date="2026-10-01", hours=8),
-            DateHoursDTO(date="2026-10-02", hours=8),
-            DateHoursDTO(date="2026-10-05", hours=4),
-        ]
+def test_groups_consecutive_days_with_equal_hours():
+    records = [
+        DateHoursDTO(date="2026-10-01", hours=8),
+        DateHoursDTO(date="2026-10-02", hours=8),
+        DateHoursDTO(date="2026-10-05", hours=4),
+    ]
 
-        preview = PreviewService.build_user_preview(make_user(), records, make_issue_info())
+    preview = PreviewService.build_preview(
+        make_project(), "redmine_fill", records, make_issue_info()
+    )
 
-        assert [(r.start_date, r.end_date, r.hours) for r in preview.ranges] == [
-            ("2026-10-01", "2026-10-02", 8),
-            ("2026-10-05", "2026-10-05", 4),
-        ]
-        assert preview.total_hours == 20
-
-    def test_splits_range_when_hours_differ(self):
-        records = [
-            DateHoursDTO(date="2026-10-01", hours=8),
-            DateHoursDTO(date="2026-10-02", hours=4),
-        ]
-
-        preview = PreviewService.build_user_preview(make_user(), records, None)
-
-        assert [(r.start_date, r.end_date) for r in preview.ranges] == [
-            ("2026-10-01", "2026-10-01"),
-            ("2026-10-02", "2026-10-02"),
-        ]
-
-    def test_empty_records_produce_empty_preview(self):
-        preview = PreviewService.build_user_preview(make_user(), [], None)
-
-        assert preview.ranges == []
-        assert preview.total_hours == 0
-
-    def test_copies_user_and_issue_fields(self):
-        records = [DateHoursDTO(date="2026-10-01", hours=8)]
-
-        preview = PreviewService.build_user_preview(
-            make_user(driver=YOUTRACK, comment="fix"), records, make_issue_info()
-        )
-
-        assert preview.user_name == "Олег"
-        assert preview.user_id == 16
-        assert preview.driver == YOUTRACK
-        assert preview.comment == "fix"
-        assert preview.issue_id == 2682
-        assert preview.issue_subject == "Тема задачи"
-        assert preview.issue_url == "http://redmine/issues/2682"
-        assert preview.issue_author == "Oleg"
-        assert preview.issue_created_on == "2026-10-01 10:00:00 UTC"
-
-    def test_missing_issue_info_keeps_none_fields(self):
-        preview = PreviewService.build_user_preview(
-            make_user(), [DateHoursDTO(date="2026-10-01", hours=8)], None
-        )
-
-        assert preview.issue_subject is None
-        assert preview.issue_url is None
-
-    def test_error_parameter_is_stored(self):
-        preview = PreviewService.build_user_preview(
-            make_user(), [], None, error="сбой сети"
-        )
-
-        assert preview.error == "сбой сети"
+    assert [(r.start_date, r.end_date, r.hours) for r in preview.ranges] == [
+        ("2026-10-01", "2026-10-02", 8),
+        ("2026-10-05", "2026-10-05", 4),
+    ]
+    assert preview.total_hours == 20
 
 
-class TestPrintPreview:
-    def test_prints_error_preview_without_dates(self, capsys):
-        preview = PreviewService.build_user_preview(
-            make_user(), [], None, error="сбой сети"
-        )
+def test_copies_project_fields():
+    preview = PreviewService.build_preview(
+        make_project(),
+        "youtrack_transfer",
+        [DateHoursDTO(date="2026-10-01", hours=8)],
+        make_issue_info(),
+    )
 
-        PreviewService.print_preview(preview)
+    assert preview.project_name == "Олег"
+    assert preview.action == "youtrack_transfer"
+    assert preview.issue_id == 2682
+    assert preview.comment == "development"
+    assert preview.issue_subject == "Тема задачи"
+    assert preview.issue_url == "http://redmine/issues/2682"
 
-        output = capsys.readouterr().out
-        assert "=== User: Олег (user_id=16) ===" in output
-        assert "Ошибка: сбой сети" in output
-        assert "Dates:" not in output
+
+def test_error_is_stored():
+    preview = PreviewService.build_preview(
+        make_project(), "redmine_fill", [], None, error="сбой сети"
+    )
+
+    assert preview.error == "сбой сети"
+    assert preview.ranges == []
+    assert preview.total_hours == 0
+
+
+def test_print_preview_uses_project_name(capsys):
+    preview = PreviewService.build_preview(
+        make_project(), "redmine_fill", [], None, error="сбой сети"
+    )
+
+    PreviewService.print_preview(preview)
+
+    output = capsys.readouterr().out
+    assert "=== Project: Олег ===" in output
+    assert "Ошибка: сбой сети" in output

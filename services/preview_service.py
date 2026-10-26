@@ -1,6 +1,6 @@
 from datetime import date
 
-from configs.user_config import UserConfig
+from configs.project_config import ProjectConfig
 from dto.date_hours_dto import DateHoursDTO
 from dto.issue_info_dto import IssueInfoDTO
 from dto.preview_dto import DateRangeDTO, PreviewDTO
@@ -11,19 +11,26 @@ class PreviewService:
     @staticmethod
     def get_issue_info(
         issue_info_cache: dict[int, IssueInfoDTO | None],
-        user: UserConfig,
+        project: ProjectConfig,
     ) -> IssueInfoDTO | None:
-        if user.issue_id not in issue_info_cache:
-            issue_info_cache[user.issue_id] = IssueService.get_issue_info(
-                issue_id=user.issue_id,
-                api_key=user.redmine_api_key,
-            )
+        config = project.trackers.get("redmine", {})
+        issue_id = config.get("issue_id")
+        api_key = config.get("api_key", "")
+        if not issue_id or not api_key:
+            return None
 
-        return issue_info_cache[user.issue_id]
+        issue_id = int(issue_id)
+        if issue_id not in issue_info_cache:
+            issue_info_cache[issue_id] = IssueService.get_issue_info(
+                issue_id=issue_id,
+                api_key=api_key,
+            )
+        return issue_info_cache[issue_id]
 
     @staticmethod
-    def build_user_preview(
-        user: UserConfig,
+    def build_preview(
+        project: ProjectConfig,
+        action: str,
         records: list[DateHoursDTO],
         issue_info: IssueInfoDTO | None,
         error: str | None = None,
@@ -54,12 +61,13 @@ class PreviewService:
             ranges.append(DateRangeDTO(range_start.date, prev.date, range_start.hours))
             total_hours += range_count * range_start.hours
 
+        config = project.trackers.get("redmine", {})
+        issue_id = int(config.get("issue_id") or 0)
         return PreviewDTO(
-            user_name=user.name,
-            user_id=user.user_id,
-            driver=user.driver,
-            comment=user.comment,
-            issue_id=user.issue_id,
+            project_name=project.name,
+            action=action,
+            issue_id=issue_id,
+            comment=config.get("comment", ""),
             issue_subject=issue_info.subject if issue_info else None,
             issue_url=issue_info.url if issue_info else None,
             issue_author=issue_info.author if issue_info else None,
@@ -77,7 +85,8 @@ class PreviewService:
 
     @staticmethod
     def print_preview(preview: PreviewDTO) -> None:
-        print(f"=== User: {preview.user_name} (user_id={preview.user_id}) ===")
+        print(f"=== Project: {preview.project_name} ===")
+        print(f"Action: {preview.action}")
         if preview.error is not None:
             print(f"Ошибка: {preview.error}")
             print()
@@ -91,7 +100,6 @@ class PreviewService:
             )
             print(f"Issue: {preview.issue_subject}")
             print(f"Issue URL: {preview.issue_url}")
-        print(f"Driver: {preview.driver}")
         print(f"Comment: {preview.comment}")
         print("Dates:")
         for date_range in preview.ranges:
