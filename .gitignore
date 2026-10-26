@@ -5,6 +5,7 @@ __pycache__/
 user_list.py
 user_list.py.migrated
 fill_redmine.db
+work_assistant.db
 configs/__pycache__/
 dto/__pycache__/
 imports/__pycache__/

@@ -9,4 +9,4 @@ elif [[ -x "$SCRIPT_DIR/venv/bin/python" ]]; then
 else
     PYTHON="python3"
 fi
-exec "$PYTHON" "$SCRIPT_DIR/fill_redmine_gui.py"
+exec "$PYTHON" "$SCRIPT_DIR/work_assistant.py"

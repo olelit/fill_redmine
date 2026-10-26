@@ -1,66 +1,63 @@
-# Fill Redmine
+# Work Assistant
 
-Импорт временных записей из YouTrack в Redmine. Юзеры хранятся в SQLite, управление — через GUI или CLI.
+Проекты для учёта времени: Redmine, YouTrack и ИИ-план по git-коммитам.
 
 ## Установка
 
-### 1. Системные зависимости
-
 ```bash
 sudo pacman -S tk
-```
-
-`tk` нужен для Tkinter-GUI.
-
-### 2. Виртуальное окружение
-
-```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-### 3. Настройка окружения
-
-```bash
 cp .env.example .env
 ```
 
 Заполните `REDMINE_BASE_URL` и `YOUTRACK_BASE_URL`.
 
-## GUI
+## Запуск
 
 ```bash
-python fill_redmine_gui.py
+python work_assistant.py
 ```
 
-Первое окно содержит список юзеров (добавление, редактирование, удаление, вкл/выкл),
-панель превью и импорта с прогрессом и логом. Включённые юзеры хранятся в
-`fill_redmine.db` (права 600, путь переопределяется переменной `FILL_REDMINE_DB`).
+При первом запуске старый `fill_redmine.db` автоматически переименовывается
+в `work_assistant.db`, а юзеры из старой таблицы один раз становятся проектами.
 
-При первом запуске, если база пуста и существует `user_list.py`, юзеры переносятся в БД,
-а файл переименовывается в `user_list.py.migrated`.
+## Проекты
 
-### Ярлык на панели KDE
+Кнопка `+` создаёт проект. У проекта есть:
 
-```bash
-bash scripts/install_desktop.sh
-```
+- Redmine: API key, user_id, activity_id, issue_id, комментарий;
+- YouTrack: access token;
+- git: путь к локальному репозиторию и email автора;
+- ИИ: base_url, model, api_key или env `OPENAI_BASE_URL`, `OPENAI_MODEL`,
+  `OPENAI_API_KEY`;
+- исключённые даты и рабочий день (по умолчанию 8 часов).
 
-Скрипт ставит ярлык в меню приложений и пытается закрепить его на панели Plasma 6.
-Если автопин не удался — закрепите вручную: ПКМ по иконке → «Закрепить на панели».
+Внутри проекта:
 
-Альтернатива: перетащите файл `Fill Redmine.desktop` из корня проекта на панель,
-рабочий стол или скопируйте в `~/.local/share/applications/`.
+1. **Redmine** — заполняет будни текущего месяца до 8 часов, кроме исключённых
+   дат и уже затреканных.
+2. **YouTrack → Redmine** — переносит work items текущего месяца в Redmine.
+3. **Коммиты и план** — читает коммиты автора по всем веткам, считает дефицит
+   часов по выбранным трекерам и просит ИИ предложить план. В YouTrack ничего
+   не записывается: план копируется вручную.
+
+## Новый трекер
+
+1. Создайте `trackers/<kind>.py` с классом-наследником `BaseTracker`.
+2. Опишите `fields` и реализуйте `get_worklogs(start, end)`.
+3. Добавьте импорт класса в `trackers/__init__.py`.
+
+GUI сам покажет поля в настройках проекта и чекбокс на вкладке плана.
+Миграции БД не нужны.
 
 ## CLI
 
 ```bash
-python fill_redmine.py
-python fill_redmine.py --id 1234
+python work_assistant_cli.py
+python work_assistant_cli.py --project 1 --action youtrack_transfer
 ```
-
-CLI читает юзеров из той же SQLite-базы.
 
 ## Тесты
 
@@ -68,16 +65,3 @@ CLI читает юзеров из той же SQLite-базы.
 pip install -r requirements-dev.txt
 pytest
 ```
-
-## Структура проекта
-
-- `fill_redmine.py` — CLI
-- `fill_redmine_gui.py` — точка входа GUI
-- `gui/` — окна и виджеты Tkinter
-- `storage/` — SQLite: схема, репозиторий, миграция
-- `services/` — превью и импорт
-- `imports/` — импортеры (manual/youtrack)
-- `clients/` — API-клиенты Redmine и YouTrack
-- `dto/` — объекты передачи данных
-- `configs/` — конфигурация и `UserConfig`
-- `scripts/install_desktop.sh` — установка ярлыка

@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=Fill Redmine
-Comment=Импорт временных записей из YouTrack в Redmine
+Name=Work Assistant
+Comment=Проекты, трекеры и план по коммитам
 Exec=/home/oleg/code/fill_redmine/run_gui.sh
 Path=/home/oleg/code/fill_redmine
-Icon=/home/oleg/code/fill_redmine/assets/fill_redmine.svg
+Icon=/home/oleg/code/fill_redmine/assets/work_assistant.svg
 Terminal=false
 Categories=Utility;
 StartupNotify=true
