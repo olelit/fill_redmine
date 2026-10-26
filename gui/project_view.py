@@ -43,14 +43,39 @@ class ProjectView(ttk.Frame):
         self._build_placeholders()
 
     def _build_placeholders(self) -> None:
-        for title in ("Redmine", "YouTrack → Redmine", "Коммиты и план"):
-            frame = ttk.Frame(self.notebook, padding=12)
-            ttk.Label(frame, text="Вкладка будет добавлена следующим шагом").pack()
-            self.notebook.add(frame, text=title)
+        from gui.import_view import ImportView
+        from dto.import_action import ImportAction
+
+        self.redmine_view = ImportView(
+            self.notebook,
+            self.project,
+            self.service,
+            self.worker,
+            ImportAction.REDMINE_FILL,
+            "redmine",
+        )
+        self.notebook.add(self.redmine_view, text="Redmine")
+
+        self.youtrack_view = ImportView(
+            self.notebook,
+            self.project,
+            self.service,
+            self.worker,
+            ImportAction.YOUTRACK_TRANSFER,
+            "youtrack",
+        )
+        self.notebook.add(self.youtrack_view, text="YouTrack → Redmine")
+
+        placeholder = ttk.Frame(self.notebook, padding=12)
+        ttk.Label(
+            placeholder,
+            text="Вкладка плана по коммитам будет добавлена следующим шагом",
+        ).pack()
+        self.notebook.add(placeholder, text="Коммиты и план")
 
     @property
     def busy(self) -> bool:
-        return False
+        return self.redmine_view.busy or self.youtrack_view.busy
 
     def _back(self) -> None:
         if self.busy and not messagebox.askyesno(

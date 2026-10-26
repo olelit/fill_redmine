@@ -1,36 +1,49 @@
 import asyncio
 import tkinter as tk
-from collections.abc import Callable
 from tkinter import messagebox, ttk
 
+from configs.project_config import ProjectConfig
+from dto.import_action import ImportAction
 from gui.formatting import format_hours, format_range
 from gui.worker import GuiWorker
-from services.import_service import ImportService, ImportSummary, PrepareResult, PreparedImport
+from services.import_service import (
+    ImportService,
+    ImportSummary,
+    PrepareResult,
+    PreparedImport,
+)
 
 
 class ImportView(ttk.LabelFrame):
     def __init__(
         self,
         parent,
+        project: ProjectConfig,
         service: ImportService,
         worker: GuiWorker,
-        get_users: Callable[[bool], list],
+        action: ImportAction,
+        event_prefix: str,
     ):
-        super().__init__(parent, text="Превью и импорт", padding=4)
+        super().__init__(parent, text=action.label, padding=4)
+        self.project = project
         self.service = service
         self.worker = worker
-        self.get_users = get_users
+        self.action = action
+        self.event_prefix = event_prefix
         self.prepared: list[PreparedImport] = []
         self.busy = False
         self._build()
         self._register_handlers()
 
+    def _kind(self, suffix: str) -> str:
+        return f"{self.event_prefix}_{suffix}"
+
     def _register_handlers(self) -> None:
-        self.worker.register("log", self.log)
-        self.worker.register("preview_done", self._on_preview_done)
-        self.worker.register("import_done", self._on_import_done)
-        self.worker.register("error", self._on_worker_error)
-        self.worker.register("progress", self._on_progress)
+        self.worker.register(self._kind("log"), self.log)
+        self.worker.register(self._kind("preview_done"), self._on_preview_done)
+        self.worker.register(self._kind("import_done"), self._on_import_done)
+        self.worker.register(self._kind("error"), self._on_worker_error)
+        self.worker.register(self._kind("progress"), self._on_progress)
 
     def _build(self) -> None:
         buttons = ttk.Frame(self)
@@ -40,26 +53,21 @@ class ImportView(ttk.LabelFrame):
         )
         self.preview_button.pack(side="left", padx=2)
         self.import_button = ttk.Button(
-            buttons, text="Запустить импорт", command=self.run_import, state="disabled"
+            buttons,
+            text="Запустить импорт",
+            command=self.run_import,
+            state="disabled",
         )
         self.import_button.pack(side="left", padx=2)
-        self.only_enabled = tk.BooleanVar(value=True)
-        ttk.Checkbutton(
-            buttons,
-            text="только включённые",
-            variable=self.only_enabled,
-        ).pack(side="left", padx=8)
 
-        columns = ("user", "driver", "issue", "subject", "periods", "total")
+        columns = ("issue", "subject", "periods", "total")
         headings = {
-            "user": ("Имя", 130),
-            "driver": ("Driver", 80),
-            "issue": ("Issue", 70),
-            "subject": ("Тема", 220),
-            "periods": ("Периоды", 260),
-            "total": ("Всего", 70),
+            "issue": ("Issue", 90),
+            "subject": ("Тема", 300),
+            "periods": ("Периоды", 360),
+            "total": ("Всего", 80),
         }
-        self.tree = ttk.Treeview(self, columns=columns, show="headings", height=6)
+        self.tree = ttk.Treeview(self, columns=columns, show="headings", height=8)
         for column, (title, width) in headings.items():
             self.tree.heading(column, text=title)
             self.tree.column(column, width=width, anchor="w")
@@ -77,7 +85,7 @@ class ImportView(ttk.LabelFrame):
 
         log_frame = ttk.Frame(self)
         log_frame.pack(fill="both", expand=True)
-        self.log_text = tk.Text(log_frame, height=9, state="disabled", wrap="word")
+        self.log_text = tk.Text(log_frame, height=10, state="disabled", wrap="word")
         scrollbar = ttk.Scrollbar(log_frame, command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=scrollbar.set)
         self.log_text.pack(side="left", fill="both", expand=True)
@@ -91,25 +99,22 @@ class ImportView(ttk.LabelFrame):
 
     def _set_busy(self, busy: bool) -> None:
         self.busy = busy
-        state = "disabled" if busy else "normal"
-        self.preview_button.configure(state=state)
+        self.preview_button.configure(state="disabled" if busy else "normal")
         can_import = not busy and bool(self.prepared)
-        self.import_button.configure(state="normal" if can_import else "disabled")
+        self.import_button.configure(
+            state="normal" if can_import else "disabled"
+        )
 
     def build_preview(self) -> None:
-        users = self.get_users(self.only_enabled.get())
-        if not users:
-            messagebox.showinfo("Fill Redmine", "Нет юзеров для превью", parent=self)
-            return
         self.prepared = []
         self.import_button.configure(state="disabled")
         self.tree.delete(*self.tree.get_children())
         self.log("Строю превью...")
         self._set_busy(True)
         self.worker.submit(
-            lambda: self.service.prepare(users),
-            done_kind="preview_done",
-            error_kind="error",
+            lambda: self.service.prepare(self.project, self.action),
+            done_kind=self._kind("preview_done"),
+            error_kind=self._kind("error"),
         )
 
     def _on_preview_done(self, result: PrepareResult) -> None:
@@ -121,8 +126,6 @@ class ImportView(ttk.LabelFrame):
                     "",
                     "end",
                     values=(
-                        preview.user_name,
-                        preview.driver,
                         preview.issue_id,
                         preview.issue_subject or "—",
                         "",
@@ -136,8 +139,6 @@ class ImportView(ttk.LabelFrame):
                         values=(
                             "",
                             "",
-                            "",
-                            "",
                             format_range(date_range),
                             format_hours(date_range.hours),
                         ),
@@ -148,8 +149,6 @@ class ImportView(ttk.LabelFrame):
                     "end",
                     tags=("error",),
                     values=(
-                        preview.user_name,
-                        preview.driver,
                         preview.issue_id,
                         f"Ошибка: {preview.error}",
                         "",
@@ -157,21 +156,28 @@ class ImportView(ttk.LabelFrame):
                     ),
                 )
             self.log(
-                f"Превью готово: юзеров {len(result.items)}, "
+                f"Превью готово: записей {sum(len(i.records) for i in result.items)}, "
                 f"ошибок {len(result.errors)}"
             )
             if not result.items:
-                messagebox.showinfo("Fill Redmine", "Нет записей для импорта", parent=self)
+                messagebox.showinfo(
+                    "Work Assistant", "Нет записей для импорта", parent=self
+                )
         finally:
             self._set_busy(False)
 
     def run_import(self) -> None:
         if not self.prepared:
-            messagebox.showinfo("Fill Redmine", "Сначала постройте превью", parent=self)
+            messagebox.showinfo(
+                "Work Assistant", "Сначала постройте превью", parent=self
+            )
             return
         total = sum(len(item.records) for item in self.prepared)
-        question = f"Импортировать {total} записей для {len(self.prepared)} юзеров?"
-        if not messagebox.askyesno("Fill Redmine", question, parent=self):
+        if not messagebox.askyesno(
+            "Work Assistant",
+            f"Импортировать {total} записей в Redmine?",
+            parent=self,
+        ):
             return
         items = self.prepared
         self.progress_bar.configure(maximum=max(total, 1), value=0)
@@ -179,12 +185,16 @@ class ImportView(ttk.LabelFrame):
         self._set_busy(True)
 
         def progress_cb(completed: int, global_total: int, name: str) -> None:
-            self.worker.send("progress", (completed, global_total, name))
+            self.worker.send(
+                self._kind("progress"), (completed, global_total, name)
+            )
 
         self.worker.submit(
-            lambda: asyncio.run(self.service.run(items, progress_cb=progress_cb)),
-            done_kind="import_done",
-            error_kind="error",
+            lambda: asyncio.run(
+                self.service.run(items, progress_cb=progress_cb)
+            ),
+            done_kind=self._kind("import_done"),
+            error_kind=self._kind("error"),
         )
 
     def _on_progress(self, payload: tuple[int, int, str]) -> None:
@@ -197,15 +207,18 @@ class ImportView(ttk.LabelFrame):
             self.prepared = []
             self.progress_label.set("")
             success = summary.total - len(summary.errors)
-            message = f"Импорт завершён: успешно {success}, ошибок {len(summary.errors)}"
+            message = (
+                f"Импорт завершён: успешно {success}, "
+                f"ошибок {len(summary.errors)}"
+            )
             self.log(message)
-            for user_name, spent_on, error in summary.errors:
-                self.log(f"  {user_name} {spent_on}: {error}")
-            messagebox.showinfo("Fill Redmine", message, parent=self)
+            for project_name, spent_on, error in summary.errors:
+                self.log(f"  {project_name} {spent_on}: {error}")
+            messagebox.showinfo("Work Assistant", message, parent=self)
         finally:
             self._set_busy(False)
 
     def _on_worker_error(self, exc: Exception) -> None:
         self._set_busy(False)
         self.log(f"Ошибка: {exc}")
-        messagebox.showerror("Fill Redmine", str(exc), parent=self)
+        messagebox.showerror("Work Assistant", str(exc), parent=self)
