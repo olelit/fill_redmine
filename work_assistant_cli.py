@@ -65,10 +65,19 @@ def cli() -> None:
     parser.add_argument(
         "--action",
         choices=[action.value for action in ImportAction],
-        default=ImportAction.REDMINE_FILL.value,
+        default=None,
     )
     parser.add_argument("--id", type=int, help="Override Redmine issue ID")
     args = parser.parse_args()
+
+    if args.project is None and (args.id is not None or args.action is not None):
+        parser.error("--id/--action требуют --project")
+
+    action = (
+        ImportAction(args.action)
+        if args.action is not None
+        else ImportAction.REDMINE_FILL
+    )
 
     migrate_default_legacy_database()
     user_repo = UserRepository()
@@ -78,7 +87,7 @@ def cli() -> None:
     asyncio.run(
         main(
             project_id=args.project,
-            action=ImportAction(args.action),
+            action=action,
             override_issue_id=args.id,
             repo=project_repo,
         )

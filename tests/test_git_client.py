@@ -133,3 +133,10 @@ def test_empty_email_raises(repo):
 def test_not_a_repository_raises(tmp_path):
     with pytest.raises(GitError, match="git"):
         GitClient(tmp_path).validate()
+
+
+def test_empty_repo_path_raises():
+    with pytest.raises(GitError, match="Не задан путь"):
+        GitClient("").validate()
+    with pytest.raises(GitError, match="Не задан путь"):
+        GitClient("   ").validate()

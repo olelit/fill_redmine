@@ -1,5 +1,6 @@
 import queue
 import threading
+import traceback
 from collections.abc import Callable
 from typing import Any
 
@@ -13,6 +14,12 @@ class GuiWorker:
 
     def register(self, kind: str, handler: Callable[[Any], None]) -> None:
         self.handlers[kind] = handler
+
+    def unregister(self, kind: str, handler: Callable[[Any], None] | None = None) -> None:
+        if handler is None:
+            self.handlers.pop(kind, None)
+        elif self.handlers.get(kind) == handler:
+            self.handlers.pop(kind, None)
 
     def send(self, kind: str, payload: Any = None) -> None:
         self.queue.put((kind, payload))
@@ -44,5 +51,9 @@ class GuiWorker:
                 handler(payload)
 
     def _poll(self) -> None:
-        self.drain()
-        self.root.after(100, self._poll)
+        try:
+            self.drain()
+        except Exception:
+            traceback.print_exc()
+        finally:
+            self.root.after(100, self._poll)

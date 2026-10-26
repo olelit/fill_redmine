@@ -45,6 +45,7 @@ class CommitPlanView(ttk.Frame):
         self.commits = []
         self.plan: CommitPlanDTO | None = None
         self.busy = False
+        self.ai_ready = False
         self.tracker_vars: dict[str, tk.BooleanVar] = {}
         self._build()
         self._register_handlers()
@@ -58,7 +59,18 @@ class CommitPlanView(ttk.Frame):
         self.worker.register(self._kind("error"), self._on_error)
         self.worker.register(self._kind("log"), self.log)
 
+    def destroy(self) -> None:
+        for suffix in ("commits_done", "plan_done", "error", "log"):
+            self.worker.unregister(self._kind(suffix))
+        super().destroy()
+
     def _build(self) -> None:
+        try:
+            resolve_ai_config(self.project)
+            self.ai_ready = True
+        except Exception:
+            self.ai_ready = False
+
         period = ttk.Frame(self)
         period.pack(fill="x")
         ttk.Label(period, text="С").pack(side="left")
@@ -69,6 +81,8 @@ class CommitPlanView(ttk.Frame):
         self.end_var = ttk.Entry(period, width=12)
         self.end_var.pack(side="left", padx=4)
         self.end_var.insert(0, date.today().isoformat())
+        self.start_var.bind("<KeyRelease>", self._on_period_changed)
+        self.end_var.bind("<KeyRelease>", self._on_period_changed)
         self.load_button = ttk.Button(
             period, text="Загрузить коммиты", command=self.load_commits
         )
@@ -115,6 +129,7 @@ class CommitPlanView(ttk.Frame):
                 trackers_frame,
                 text=tracker.label,
                 variable=variable,
+                command=self._on_tracker_toggle,
             ).pack(side="left", padx=6)
         if not configured:
             ttk.Label(
@@ -169,6 +184,17 @@ class CommitPlanView(ttk.Frame):
         self.log_text.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
+        self._set_busy(False)
+
+    def _on_tracker_toggle(self) -> None:
+        selected = [
+            kind for kind, variable in self.tracker_vars.items() if variable.get()
+        ]
+        self.project.ai["selected_trackers"] = selected
+        if self.project.db_id is not None:
+            self.repo.update_project(self.project.db_id, self.project)
+        self._set_busy(self.busy)
+
     def log(self, message: str) -> None:
         self.log_text.configure(state="normal")
         self.log_text.insert("end", message + "\n")
@@ -183,6 +209,7 @@ class CommitPlanView(ttk.Frame):
         self.load_button.configure(state="disabled" if busy else "normal")
         can_generate = (
             not busy
+            and self.ai_ready
             and bool(self.commits)
             and any(variable.get() for variable in self.tracker_vars.values())
         )
@@ -190,7 +217,20 @@ class CommitPlanView(ttk.Frame):
             state="normal" if can_generate else "disabled"
         )
 
+    def _on_period_changed(self, _event=None) -> None:
+        self.commits = []
+        self.commit_tree.delete(*self.commit_tree.get_children())
+        self.plan = None
+        self.plan_tree.delete(*self.plan_tree.get_children())
+        self.summary_text.configure(text="")
+        self.copy_button.configure(state="disabled")
+        self._set_busy(self.busy)
+
     def load_commits(self) -> None:
+        self.plan = None
+        self.plan_tree.delete(*self.plan_tree.get_children())
+        self.summary_text.configure(text="")
+        self.copy_button.configure(state="disabled")
         try:
             start, end = parse_period(self.start_var.get(), self.end_var.get())
         except ValueError as exc:

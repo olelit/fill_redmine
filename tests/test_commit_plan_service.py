@@ -1,3 +1,4 @@
+import json
 from datetime import date
 
 import pytest
@@ -29,6 +30,15 @@ class BrokenTracker(BaseTracker):
 
     def get_worklogs(self, start, end):
         raise RuntimeError("tracker down")
+
+
+class SecondTracker(BaseTracker):
+    kind = "second_plan"
+    label = "Second"
+    fields = (TrackerField("token", "Token"),)
+
+    def get_worklogs(self, start, end):
+        return [WorklogDTO(date="2026-10-01", hours=2)]
 
 
 class FakeAi:
@@ -240,3 +250,82 @@ def test_prompt_contains_commits_and_deficit():
     assert "Проект" in user_prompt
     assert "Add import" in user_prompt
     assert '"deficit_hours": 5.0' in user_prompt
+
+
+def test_period_longer_than_max_raises():
+    service = make_service({"summary": "ok", "days": []})
+
+    with pytest.raises(PlanError, match="Период"):
+        service.generate(
+            make_project(),
+            date(2026, 1, 1),
+            date(2026, 12, 31),
+            ["fake_plan"],
+            [],
+        )
+
+
+def test_truncates_body_and_caps_commits_per_day():
+    from services.commit_plan_service import (
+        MAX_COMMITS_PER_DAY,
+        MAX_COMMIT_BODY_CHARS,
+    )
+
+    ai = FakeAi({"summary": "ok", "days": []})
+    service = CommitPlanService(ai_client=ai, log=lambda message: None)
+    service.tracker_builder = lambda kind, config: FakeTracker(config)
+
+    commits = [
+        GitCommitDTO(
+            hash=f"hash{i:03d}",
+            author_name="Oleg",
+            author_email="oleg@example.com",
+            date="2026-10-01T10:00:00+00:00",
+            subject=f"subject {i}",
+            body="x" * 1000,
+        )
+        for i in range(30)
+    ]
+
+    service.generate(
+        make_project(),
+        date(2026, 10, 1),
+        date(2026, 10, 1),
+        ["fake_plan"],
+        commits,
+    )
+
+    _, user_prompt = ai.calls[0]
+    payload = json.loads(user_prompt)
+    day_commits = payload["days"][0]["commits"]
+    assert len(day_commits) == MAX_COMMITS_PER_DAY
+    assert all(len(commit["body"]) == MAX_COMMIT_BODY_CHARS for commit in day_commits)
+
+
+def test_sums_two_trackers_per_day():
+    project = make_project(
+        trackers={
+            "fake_plan": {"token": "t"},
+            "second_plan": {"token": "t"},
+        }
+    )
+    service = make_service({"summary": "ok", "days": []})
+
+    def builder(kind, config):
+        if kind == "second_plan":
+            return SecondTracker(config)
+        return FakeTracker(config)
+
+    service.tracker_builder = builder
+
+    plan = service.generate(
+        project,
+        date(2026, 10, 1),
+        date(2026, 10, 1),
+        ["fake_plan", "second_plan"],
+        [],
+    )
+
+    day = plan.days[0]
+    assert day.existing_hours == 5  # FakeTracker 3h + SecondTracker 2h
+    assert day.deficit_hours == 3  # 8 - 5

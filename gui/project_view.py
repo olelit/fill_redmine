@@ -83,6 +83,15 @@ class ProjectView(ttk.Frame):
             or self.commit_plan_view.busy
         )
 
+    def log(self, message: str) -> None:
+        selected = self.notebook.select()
+        if not selected:
+            return
+        tab = self.notebook.nametowidget(selected)
+        log = getattr(tab, "log", None)
+        if log is not None:
+            log(message)
+
     def _back(self) -> None:
         if self.busy and not messagebox.askyesno(
             "Work Assistant", "Идёт работа. Вернуться к списку проектов?", parent=self

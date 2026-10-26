@@ -15,21 +15,30 @@ class GitError(RuntimeError):
 
 class GitClient:
     def __init__(self, repo_path: str | Path):
-        self.repo_path = Path(repo_path).expanduser()
+        self.raw_path = str(repo_path)
+        self.repo_path = Path(self.raw_path).expanduser()
 
     def _run(self, *args: str) -> str:
-        result = subprocess.run(
-            ["git", "-C", str(self.repo_path), *args],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(self.repo_path), *args],
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=60,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise GitError("Команда git превысила таймаут") from exc
+        except OSError as exc:
+            raise GitError(f"Не удалось выполнить git: {exc}") from exc
         if result.returncode != 0:
             message = result.stderr.strip() or result.stdout.strip()
             raise GitError(message or "git command failed")
         return result.stdout
 
     def validate(self) -> None:
+        if not self.raw_path.strip():
+            raise GitError("Не задан путь к git-репозиторию")
         if not self.repo_path.exists():
             raise GitError(f"Путь к репозиторию не найден: {self.repo_path}")
         try:

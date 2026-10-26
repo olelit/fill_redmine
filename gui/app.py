@@ -13,8 +13,6 @@ class MainWindow(tk.Tk):
     def __init__(self, repo: ProjectRepository):
         super().__init__()
         self.repo = repo
-        self.worker = GuiWorker(self)
-        self.service = ImportService(log=lambda message: self.status.set(message))
         self.current_view: tk.Widget | None = None
 
         self.title("Work Assistant")
@@ -32,8 +30,20 @@ class MainWindow(tk.Tk):
             padding=2,
         ).pack(fill="x", side="bottom")
 
+        self.worker = GuiWorker(self)
+        self.worker.register("status", self._set_status)
+        self.service = ImportService(
+            log=lambda message: self.worker.send("status", message)
+        )
+
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.show_project_list()
+
+    def _set_status(self, message: str) -> None:
+        self.status.set(message)
+        view = self.current_view
+        if view is not None and hasattr(view, "log"):
+            view.log(message)
 
     def _set_view(self, view: tk.Widget) -> None:
         if self.current_view is not None:

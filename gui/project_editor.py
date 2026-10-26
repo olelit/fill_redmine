@@ -165,11 +165,17 @@ class ProjectEditor(tk.Toplevel):
             frame, 2, "api_key", "API key",
             str(values.get("api_key", "")), secret=True,
         )
+        ttk.Checkbutton(
+            frame,
+            text="показать секреты",
+            variable=self.show_secrets,
+            command=self._toggle_secrets,
+        ).grid(row=3, column=1, sticky="w", pady=(10, 0))
         ttk.Label(
             frame,
             text="Пустые поля берутся из OPENAI_BASE_URL, OPENAI_MODEL, OPENAI_API_KEY.",
             wraplength=600,
-        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
     def _browse_repo(self) -> None:
         path = filedialog.askdirectory(parent=self)

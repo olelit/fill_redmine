@@ -27,6 +27,11 @@ class PlanError(RuntimeError):
     pass
 
 
+MAX_PERIOD_DAYS = 62
+MAX_COMMITS_PER_DAY = 20
+MAX_COMMIT_BODY_CHARS = 300
+
+
 class CommitPlanService:
     def __init__(
         self,
@@ -48,6 +53,10 @@ class CommitPlanService:
     ) -> CommitPlanDTO:
         if start > end:
             raise PlanError("Начало периода позже конца")
+        if (end - start).days + 1 > MAX_PERIOD_DAYS:
+            raise PlanError(
+                f"Период слишком длинный: максимум {MAX_PERIOD_DAYS} дней"
+            )
         if not selected_kinds:
             raise PlanError("Выберите хотя бы один трекер")
 
@@ -72,11 +81,11 @@ class CommitPlanService:
                         {
                             "hash": commit.hash,
                             "subject": commit.subject,
-                            "body": commit.body[:1000],
+                            "body": commit.body[:MAX_COMMIT_BODY_CHARS],
                         }
                         for commit in commits
                         if commit.date[:10] == day.date
-                    ],
+                    ][:MAX_COMMITS_PER_DAY],
                 }
                 for day in days
             ],
@@ -161,7 +170,12 @@ class CommitPlanService:
                 hours = float(item.get("hours", 0))
             except (TypeError, ValueError):
                 continue
-            hours = round(hours * 2) / 2
+            snapped = round(hours * 2) / 2
+            if abs(snapped - hours) > 1e-9:
+                self.log(
+                    f"ИИ вернул часы {hours} не кратные 0.5 — округлено до {snapped}"
+                )
+            hours = snapped
             max_half = int(day.deficit_hours * 2) / 2
             day.planned_hours = max(0.0, min(hours, max_half))
             day.comment = str(item.get("comment", "")).strip()

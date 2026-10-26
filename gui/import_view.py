@@ -45,6 +45,11 @@ class ImportView(ttk.LabelFrame):
         self.worker.register(self._kind("error"), self._on_worker_error)
         self.worker.register(self._kind("progress"), self._on_progress)
 
+    def destroy(self) -> None:
+        for suffix in ("log", "preview_done", "import_done", "error", "progress"):
+            self.worker.unregister(self._kind(suffix))
+        super().destroy()
+
     def _build(self) -> None:
         buttons = ttk.Frame(self)
         buttons.pack(fill="x")

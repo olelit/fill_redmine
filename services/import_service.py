@@ -54,13 +54,20 @@ class ImportService:
             return result
 
         issue_info_cache: dict[int, IssueInfoDTO | None] = {}
-        issue_info = PreviewService.get_issue_info(issue_info_cache, project)
-        preview = PreviewService.build_preview(
-            project,
-            action.value,
-            records,
-            issue_info,
-        )
+        try:
+            issue_info = PreviewService.get_issue_info(issue_info_cache, project)
+            preview = PreviewService.build_preview(
+                project,
+                action.value,
+                records,
+                issue_info,
+            )
+        except Exception as exc:
+            message = f"ошибка построения превью: {exc}"
+            self.log(f"{project.name}: {message}")
+            result.errors.append(self._error_preview(project, action, message))
+            return result
+
         result.items.append(
             PreparedImport(
                 project=project,

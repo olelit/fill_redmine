@@ -51,3 +51,39 @@ class TestGuiWorker:
 
         assert wait_until(worker, lambda: len(errors) == 1)
         assert isinstance(errors[0], ValueError)
+
+    def test_raising_handler_does_not_stop_poll(self):
+        worker = GuiWorker(FakeRoot())
+        received = []
+        worker.register("boom", lambda payload: 1 / 0)
+        worker.register("ok", received.append)
+
+        worker.send("boom", None)
+        worker._poll()
+
+        worker.send("ok", "после")
+        worker._poll()
+
+        assert received == ["после"]
+
+    def test_unregister_removes_handler(self):
+        worker = GuiWorker(FakeRoot())
+        received = []
+        worker.register("log", received.append)
+        worker.unregister("log")
+
+        worker.send("log", "x")
+        worker.drain()
+
+        assert received == []
+
+    def test_unregister_specific_handler(self):
+        worker = GuiWorker(FakeRoot())
+        received = []
+        worker.register("log", received.append)
+        worker.unregister("log", received.append)
+
+        worker.send("log", "x")
+        worker.drain()
+
+        assert received == []
