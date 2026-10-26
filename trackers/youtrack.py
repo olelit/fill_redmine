@@ -1,0 +1,30 @@
+from datetime import date, datetime
+
+from clients.youtrack_client import YoutrackClient
+from dto.worklog_dto import WorklogDTO
+from trackers.base import BaseTracker, TrackerField
+from trackers.registry import register_tracker
+
+
+@register_tracker
+class YoutrackTracker(BaseTracker):
+    kind = "youtrack"
+    label = "YouTrack"
+    fields = (TrackerField("access_token", "Access token", kind="secret"),)
+
+    def get_worklogs(self, start: date, end: date) -> list[WorklogDTO]:
+        client = YoutrackClient(access_token=self.config["access_token"])
+        items = client.get_work_items(
+            start_date=datetime.combine(start, datetime.min.time()),
+            end_date=datetime.combine(end, datetime.max.time()),
+        )
+        by_date: dict[str, float] = {}
+        for item in items:
+            item_date = datetime.fromtimestamp(item["date"] / 1000).date().isoformat()
+            minutes = float((item.get("duration") or {}).get("minutes", 0))
+            by_date[item_date] = by_date.get(item_date, 0) + minutes / 60
+
+        return [
+            WorklogDTO(date=item_date, hours=hours, source=self.kind)
+            for item_date, hours in sorted(by_date.items())
+        ]

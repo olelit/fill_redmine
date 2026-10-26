@@ -8,6 +8,7 @@ from trackers.registry import (
 )
 
 from trackers.redmine import RedmineTracker  # noqa: E402,F401
+from trackers.youtrack import YoutrackTracker  # noqa: E402,F401
 
 __all__ = [
     "BaseTracker",
