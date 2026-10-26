@@ -24,3 +24,9 @@ def test_format_plan_text_contains_days_and_summary():
     assert "2026-10-01" in text
     assert "4h" in text
     assert "Импорт" in text
+
+
+def test_format_plan_text_without_proposals_returns_fallback():
+    plan = CommitPlanDTO(summary="Итог", days=[])
+
+    assert format_plan_text(plan) == "Нет предложений по часам."

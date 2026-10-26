@@ -14,27 +14,26 @@ from trackers.registry import configured_trackers
 
 
 def format_plan_text(plan: CommitPlanDTO) -> str:
-    lines: list[str] = []
-    if plan.summary:
-        lines.append(plan.summary)
-        lines.append("")
+    day_lines: list[str] = []
     for day in plan.days:
         if day.planned_hours <= 0:
             continue
-        lines.append(
-            f"{day.date} — {day.planned_hours:g}h — {day.comment}"
-        )
+        day_lines.append(f"{day.date} — {day.planned_hours:g}h — {day.comment}")
         if day.commit_hashes:
-            lines.append(f"  commits: {', '.join(day.commit_hashes)}")
-    if not lines:
+            day_lines.append(f"  commits: {', '.join(day.commit_hashes)}")
+    if not day_lines:
         return "Нет предложений по часам."
+    lines: list[str] = []
+    if plan.summary:
+        lines.extend([plan.summary, ""])
+    lines.extend(day_lines)
     return "\n".join(lines)
 
 
 class CommitPlanView(ttk.Frame):
     def __init__(
         self,
-        parent,
+        parent: tk.Misc,
         project: ProjectConfig,
         repo: ProjectRepository,
         worker: GuiWorker,
@@ -57,6 +56,7 @@ class CommitPlanView(ttk.Frame):
         self.worker.register(self._kind("commits_done"), self._on_commits_done)
         self.worker.register(self._kind("plan_done"), self._on_plan_done)
         self.worker.register(self._kind("error"), self._on_error)
+        self.worker.register(self._kind("log"), self.log)
 
     def _build(self) -> None:
         period = ttk.Frame(self)
@@ -175,6 +175,9 @@ class CommitPlanView(ttk.Frame):
         self.log_text.see("end")
         self.log_text.configure(state="disabled")
 
+    def _log_from_worker(self, message: str) -> None:
+        self.worker.send(self._kind("log"), message)
+
     def _set_busy(self, busy: bool) -> None:
         self.busy = busy
         self.load_button.configure(state="disabled" if busy else "normal")
@@ -245,7 +248,7 @@ class CommitPlanView(ttk.Frame):
             messagebox.showerror("Work Assistant", str(exc), parent=self)
             return
 
-        service = CommitPlanService(ai_client=ai_client, log=self.log)
+        service = CommitPlanService(ai_client=ai_client, log=self._log_from_worker)
         commits = list(self.commits)
         self.log(f"Генерирую план через {ai_client.config.model}...")
         self._set_busy(True)

@@ -3,6 +3,7 @@ from collections.abc import Callable
 from tkinter import messagebox, ttk
 
 from configs.project_config import ProjectConfig
+from gui.commit_plan_view import CommitPlanView
 from gui.project_editor import ProjectEditor
 from gui.worker import GuiWorker
 from services.import_service import ImportService
@@ -65,8 +66,6 @@ class ProjectView(ttk.Frame):
             "youtrack",
         )
         self.notebook.add(self.youtrack_view, text="YouTrack → Redmine")
-
-        from gui.commit_plan_view import CommitPlanView
 
         self.commit_plan_view = CommitPlanView(
             self.notebook,
