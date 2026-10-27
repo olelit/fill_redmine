@@ -70,8 +70,7 @@ The GUI requires a display; there are no CLI commands.
 
 ### Testing
 
-Tests live in `tests/` and use `pytest` (`pytest-asyncio` is installed for the
-remaining async helpers):
+Tests live in `tests/` and use `pytest`:
 
 ```bash
 # Install test dependencies
