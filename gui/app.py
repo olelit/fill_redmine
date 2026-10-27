@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from configs.project_config import ProjectConfig
+from gui.ai_settings_dialog import AiSettingsDialog
 from gui.project_list_view import ProjectListView
 from gui.project_view import ProjectView
 from gui.worker import GuiWorker
@@ -78,7 +79,10 @@ class MainWindow(tk.Tk):
         self.status.set("трекинг времени — в следующем шаге")
 
     def show_ai_settings(self) -> None:
-        self.status.set("настройки AI — в следующем шаге")
+        dialog = AiSettingsDialog(self, self.settings_repo, self.worker)
+        self.wait_window(dialog)
+        if dialog.saved:
+            self.status.set("настройки AI сохранены")
 
     def _on_close(self) -> None:
         busy = bool(getattr(self.current_view, "busy", False))
