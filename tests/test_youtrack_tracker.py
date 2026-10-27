@@ -2,6 +2,7 @@ from datetime import date, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from clients.youtrack_client import YoutrackClient
 from dto.worklog_dto import WorklogDTO
@@ -88,6 +89,119 @@ def test_create_worklogs_posts_work_items():
     assert body["duration"]["minutes"] == 240
     assert body["text"] == "dev"
     assert "PROJ-1" in mock_post.call_args.args[0]
+    local_midnight = datetime(
+        2026, 10, 27, tzinfo=datetime.now().astimezone().tzinfo
+    )
+    assert body["date"] == int(local_midnight.timestamp() * 1000)
+    assert mock_post.call_args.kwargs["headers"]["Authorization"] == "Bearer token"
+
+
+def test_create_worklogs_defaults_text():
+    tracker = YoutrackTracker({"access_token": "token", "issue_id": "PROJ-1"})
+    response = MagicMock()
+    response.status_code = 200
+    response.text = "{}"
+
+    with patch(
+        "clients.youtrack_client.Config.get_youtrack_base_url",
+        return_value="http://youtrack",
+    ), patch(
+        "clients.youtrack_client.requests.post",
+        return_value=response,
+    ) as mock_post:
+        errors = tracker.create_worklogs(
+            [WorklogDTO(date="2026-10-27", hours=4, description="")]
+        )
+
+    assert errors == []
+    assert mock_post.call_args.kwargs["json"]["text"] == "development"
+
+
+def test_create_worklogs_quotes_issue_id():
+    tracker = YoutrackTracker({"access_token": "token", "issue_id": "PROJ 1/x"})
+    response = MagicMock()
+    response.status_code = 200
+    response.text = "{}"
+
+    with patch(
+        "clients.youtrack_client.Config.get_youtrack_base_url",
+        return_value="http://youtrack",
+    ), patch(
+        "clients.youtrack_client.requests.post",
+        return_value=response,
+    ) as mock_post:
+        tracker.create_worklogs(
+            [WorklogDTO(date="2026-10-27", hours=4, description="dev")]
+        )
+
+    assert mock_post.call_args.args[0].endswith(
+        "/api/issues/PROJ%201%2Fx/timeTracking/workItems"
+    )
+
+
+def test_create_worklogs_continues_after_request_exception():
+    tracker = YoutrackTracker({"access_token": "token", "issue_id": "PROJ-1"})
+    response = MagicMock()
+    response.status_code = 200
+    response.text = "{}"
+
+    with patch(
+        "clients.youtrack_client.Config.get_youtrack_base_url",
+        return_value="http://youtrack",
+    ), patch(
+        "clients.youtrack_client.requests.post",
+        side_effect=[requests.ConnectionError("boom"), response],
+    ) as mock_post:
+        errors = tracker.create_worklogs(
+            [
+                WorklogDTO(date="2026-10-26", hours=2, description="a"),
+                WorklogDTO(date="2026-10-27", hours=4, description="b"),
+            ]
+        )
+
+    assert mock_post.call_count == 2
+    assert errors == [("2026-10-26", "boom")]
+
+
+def test_create_worklogs_reports_invalid_date():
+    tracker = YoutrackTracker({"access_token": "token", "issue_id": "PROJ-1"})
+    response = MagicMock()
+    response.status_code = 200
+    response.text = "{}"
+
+    with patch(
+        "clients.youtrack_client.Config.get_youtrack_base_url",
+        return_value="http://youtrack",
+    ), patch(
+        "clients.youtrack_client.requests.post",
+        return_value=response,
+    ) as mock_post:
+        errors = tracker.create_worklogs(
+            [
+                WorklogDTO(date="not-a-date", hours=2, description="a"),
+                WorklogDTO(date="2026-10-27", hours=4, description="b"),
+            ]
+        )
+
+    assert mock_post.call_count == 1
+    assert errors == [("not-a-date", "invalid date")]
+
+
+def test_create_worklogs_reports_http_error():
+    tracker = YoutrackTracker({"access_token": "token", "issue_id": "PROJ-1"})
+    response = MagicMock()
+    response.status_code = 400
+    response.text = "nope" * 100
+
+    with patch(
+        "clients.youtrack_client.Config.get_youtrack_base_url",
+        return_value="http://youtrack",
+    ), patch("clients.youtrack_client.requests.post", return_value=response):
+        errors = tracker.create_worklogs(
+            [WorklogDTO(date="2026-10-27", hours=4, description="dev")]
+        )
+
+    assert errors == [("2026-10-27", "400 " + ("nope" * 100)[:200])]
 
 
 def test_create_worklogs_requires_issue_id():

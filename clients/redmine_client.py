@@ -104,23 +104,30 @@ class RedmineClient:
         headers = {"X-Redmine-API-Key": self.api_key}
         errors: list[tuple[str, str]] = []
         for record in records:
-            response = requests.post(
-                url,
-                headers=headers,
-                json={
-                    "time_entry": {
-                        "issue_id": issue_id,
-                        "user_id": user_id,
-                        "spent_on": record.date,
-                        "hours": record.hours,
-                        "activity_id": activity_id,
-                        "comments": record.description or "development",
-                    }
-                },
-                timeout=10,
-            )
+            try:
+                response = requests.post(
+                    url,
+                    headers=headers,
+                    json={
+                        "time_entry": {
+                            "issue_id": issue_id,
+                            "user_id": user_id,
+                            "spent_on": record.date,
+                            "hours": record.hours,
+                            "activity_id": activity_id,
+                            "comments": record.description or "development",
+                        }
+                    },
+                    timeout=10,
+                )
+            except requests.RequestException as exc:
+                errors.append((record.date, str(exc)))
+                continue
+
             if not 200 <= response.status_code < 300:
-                errors.append((record.date, f"{response.status_code} {response.text}"))
+                errors.append(
+                    (record.date, f"{response.status_code} {response.text[:200]}")
+                )
         return errors
 
     async def create_time_entries(

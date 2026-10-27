@@ -1,6 +1,8 @@
 from datetime import date
 from unittest.mock import MagicMock, patch
 
+import requests
+
 from clients.redmine_client import RedmineClient
 from dto.worklog_dto import WorklogDTO
 from trackers.redmine import RedmineTracker
@@ -106,7 +108,58 @@ def test_create_worklogs_posts_time_entries():
     assert body["time_entry"]["issue_id"] == 2682
     assert body["time_entry"]["user_id"] == 16
     assert body["time_entry"]["hours"] == 4
+    assert body["time_entry"]["activity_id"] == 9
+    assert body["time_entry"]["spent_on"] == "2026-10-27"
     assert body["time_entry"]["comments"] == "dev"
+
+
+def test_create_worklogs_defaults_comment():
+    tracker = RedmineTracker(
+        {"api_key": "key", "user_id": 16, "activity_id": 9, "issue_id": 2682}
+    )
+    response = MagicMock()
+    response.status_code = 201
+    response.text = ""
+
+    with patch(
+        "clients.redmine_client.Config.get_redmine_base_url",
+        return_value="http://redmine",
+    ), patch(
+        "clients.redmine_client.requests.post",
+        return_value=response,
+    ) as mock_post:
+        errors = tracker.create_worklogs(
+            [WorklogDTO(date="2026-10-27", hours=4, description="")]
+        )
+
+    assert errors == []
+    assert mock_post.call_args.kwargs["json"]["time_entry"]["comments"] == "development"
+
+
+def test_create_worklogs_continues_after_request_exception():
+    tracker = RedmineTracker(
+        {"api_key": "key", "user_id": 16, "activity_id": 9, "issue_id": 2682}
+    )
+    response = MagicMock()
+    response.status_code = 201
+    response.text = ""
+
+    with patch(
+        "clients.redmine_client.Config.get_redmine_base_url",
+        return_value="http://redmine",
+    ), patch(
+        "clients.redmine_client.requests.post",
+        side_effect=[requests.ConnectionError("boom"), response],
+    ) as mock_post:
+        errors = tracker.create_worklogs(
+            [
+                WorklogDTO(date="2026-10-26", hours=2, description="a"),
+                WorklogDTO(date="2026-10-27", hours=4, description="b"),
+            ]
+        )
+
+    assert mock_post.call_count == 2
+    assert errors == [("2026-10-26", "boom")]
 
 
 def test_create_worklogs_reports_http_error():
@@ -126,3 +179,22 @@ def test_create_worklogs_reports_http_error():
         )
 
     assert errors == [("2026-10-27", "422 bad")]
+
+
+def test_create_worklogs_truncates_long_http_error():
+    tracker = RedmineTracker(
+        {"api_key": "key", "user_id": 16, "activity_id": 9, "issue_id": 2682}
+    )
+    response = MagicMock()
+    response.status_code = 500
+    response.text = "x" * 500
+
+    with patch(
+        "clients.redmine_client.Config.get_redmine_base_url",
+        return_value="http://redmine",
+    ), patch("clients.redmine_client.requests.post", return_value=response):
+        errors = tracker.create_worklogs(
+            [WorklogDTO(date="2026-10-27", hours=4, description="dev")]
+        )
+
+    assert errors == [("2026-10-27", "500 " + "x" * 200)]
