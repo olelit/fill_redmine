@@ -129,22 +129,27 @@ def migrate_projects_to_v2(
             migrated += 1
 
     if settings_repo.get_raw(AI_SETTINGS_KEY) is None:
-        legacy = next(
-            (
-                p.ai
-                for p in projects
-                if p.ai.get("api_key") or p.ai.get("model") or p.ai.get("base_url")
-            ),
-            None,
-        )
-        if legacy:
+        legacy = None
+        for project in projects:
+            api_key = str(project.ai.get("api_key") or "").strip()
+            model = str(project.ai.get("model") or "").strip()
+            if model and api_key:
+                legacy = project.ai
+                break
+        if legacy is not None:
             api_key = str(legacy.get("api_key") or "").strip()
+            model = str(legacy.get("model") or "").strip()
+            base_url = str(legacy.get("base_url") or "").strip()
+            if base_url:
+                provider = "custom"
+            else:
+                provider = "openai"
             settings_repo.save_ai_settings(
                 AiSettings(
-                    provider="custom",
-                    model=str(legacy.get("model") or "").strip(),
-                    base_url=str(legacy.get("base_url") or "").strip(),
-                    keys={"custom": api_key} if api_key else {},
+                    provider=provider,
+                    model=model,
+                    base_url=base_url,
+                    keys={provider: api_key},
                 )
             )
 

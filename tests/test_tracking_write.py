@@ -95,7 +95,8 @@ def test_write_report_refuses_read_only_tracker():
     assert tracker.written == []
     assert result.written == 0
     assert any("не поддерживает запись" in error[2] for error in result.errors)
-    assert report.rows[0].status == ""
+    assert report.rows[0].status == "ошибка"
+    assert "не поддерживает запись" in report.rows[0].error
     assert report.rows[0].include is True
 
 
@@ -202,5 +203,46 @@ def test_write_report_reports_missing_tracker_config():
     assert result.errors
     assert result.errors[0][0] == "A"
     assert result.errors[0][2]
-    assert report.rows[0].status == ""
+    assert report.rows[0].status == "ошибка"
+    assert report.rows[0].error
     assert report.rows[0].include is True
+
+
+def test_write_report_marks_rows_when_tracker_builder_raises():
+    def builder(kind, config):
+        raise RuntimeError("нет соединения")
+
+    service = TrackingService(tracker_builder=builder)
+    report = make_report(
+        make_row(date="2026-10-01"),
+        make_row(row_id="1:2", date="2026-10-02"),
+        make_row(
+            row_id="2:b",
+            user_id=2,
+            user_name="B",
+            date="2026-10-03",
+        ),
+    )
+
+    result = service.write_report(project_with_users(), report)
+
+    assert result.written == 0
+    assert len(result.errors) == 2
+    for row in report.rows:
+        assert row.status == "ошибка"
+        assert row.error == "нет соединения"
+        assert row.include is True
+
+
+def test_write_report_marks_rows_when_create_worklogs_raises():
+    tracker = FakeTracker({"token": "a"}, error=RuntimeError("сервер недоступен"))
+    service = TrackingService(tracker_builder=lambda kind, config: tracker)
+    report = make_report(make_row())
+
+    result = service.write_report(project_with_users(), report)
+
+    assert result.written == 0
+    assert report.rows[0].status == "ошибка"
+    assert report.rows[0].error == "сервер недоступен"
+    assert report.rows[0].include is True
+    assert ("A", "", "сервер недоступен") in result.errors

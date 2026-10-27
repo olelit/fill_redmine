@@ -1,3 +1,4 @@
+from clients.ai.factory import create_ai_client
 from configs.project_config import ProjectConfig
 from configs.ai_settings import AiSettings
 from storage.migration import migrate_projects_to_v2
@@ -49,6 +50,25 @@ def test_ai_dict_without_credentials_does_not_override_defaults(tmp_path):
     assert settings.provider == "opencode_go"
     assert settings.model == "deepseek-v4.1-flash"
     assert settings.keys == {}
+
+
+def test_legacy_ai_without_base_url_migrates_to_openai(tmp_path):
+    db_path = tmp_path / "test.db"
+    project_repo = ProjectRepository(db_path=db_path)
+    settings_repo = SettingsRepository(db_path=db_path)
+    project_repo.add_project(
+        ProjectConfig(name="P", ai={"model": "gpt-x", "api_key": "key"})
+    )
+
+    migrate_projects_to_v2(project_repo, settings_repo, log=lambda message: None)
+
+    settings = settings_repo.get_ai_settings()
+    assert settings.provider == "openai"
+    assert settings.model == "gpt-x"
+    assert settings.base_url == ""
+    assert settings.keys == {"openai": "key"}
+    client = create_ai_client(settings)
+    assert client.base_url == "https://api.openai.com/v1"
 
 
 def test_migration_is_idempotent(tmp_path):

@@ -213,13 +213,9 @@ class TrackingService:
             try:
                 tracker = self._tracker(user, report.destination_kind)
                 if not tracker.can_write:
-                    result.errors.append(
-                        (
-                            user.name,
-                            "",
-                            f"Трекер {tracker.label} не поддерживает запись",
-                        )
-                    )
+                    message = f"Трекер {tracker.label} не поддерживает запись"
+                    self._mark_rows_failed(rows, message)
+                    result.errors.append((user.name, "", message))
                     continue
                 records = [
                     WorklogDTO(
@@ -241,6 +237,7 @@ class TrackingService:
                         row.include = False
                         result.written += 1
             except Exception as exc:
+                self._mark_rows_failed(rows, str(exc))
                 result.errors.append((user.name, "", str(exc)))
 
         unmatched: dict[int, str] = {}
@@ -255,6 +252,14 @@ class TrackingService:
         for user_name in unmatched.values():
             result.errors.append((user_name, "", "юзер не найден"))
         return result
+
+    @staticmethod
+    def _mark_rows_failed(rows: list[TrackingRow], message: str) -> None:
+        for row in rows:
+            if row.status == "записано":
+                continue
+            row.status = "ошибка"
+            row.error = message
 
     def _add_commits_rows(
         self,
