@@ -112,43 +112,43 @@ class ProjectRepository:
         if current is None:
             raise ValueError(f"Project {project_id} not found")
 
-        self.conn.execute(
-            """UPDATE projects SET
-               git_repo_path = ?, workday_hours = ?, exclude_dates = ?,
-               default_comment = ?
-               WHERE id = ?""",
-            (
-                donor.git_repo_path,
-                donor.workday_hours,
-                json.dumps(donor.exclude_dates, ensure_ascii=False),
-                donor.default_comment,
-                project_id,
-            ),
-        )
-
         changed = 0
-        existing = {user.name: user for user in self.list_users(project_id)}
-        for donor_user in donor.users:
-            current_user = existing.get(donor_user.name)
-            if current_user is None:
-                self.conn.execute(
-                    f"INSERT INTO project_users ({USER_COLUMNS}) VALUES (?, ?, ?, ?)",
-                    self._user_values(project_id, donor_user),
-                )
-                changed += 1
-            else:
-                self.conn.execute(
-                    """UPDATE project_users SET
-                       git_email = ?, trackers_json = ?
-                       WHERE id = ?""",
-                    (
-                        donor_user.git_email,
-                        json.dumps(donor_user.trackers, ensure_ascii=False),
-                        current_user.db_id,
-                    ),
-                )
-                changed += 1
-        self.conn.commit()
+        with self.conn:
+            self.conn.execute(
+                """UPDATE projects SET
+                   git_repo_path = ?, workday_hours = ?, exclude_dates = ?,
+                   default_comment = ?
+                   WHERE id = ?""",
+                (
+                    donor.git_repo_path,
+                    donor.workday_hours,
+                    json.dumps(donor.exclude_dates, ensure_ascii=False),
+                    donor.default_comment,
+                    project_id,
+                ),
+            )
+
+            existing = {user.name: user for user in self.list_users(project_id)}
+            for donor_user in donor.users:
+                current_user = existing.get(donor_user.name)
+                if current_user is None:
+                    self.conn.execute(
+                        f"INSERT INTO project_users ({USER_COLUMNS}) VALUES (?, ?, ?, ?)",
+                        self._user_values(project_id, donor_user),
+                    )
+                    changed += 1
+                else:
+                    self.conn.execute(
+                        """UPDATE project_users SET
+                           git_email = ?, trackers_json = ?
+                           WHERE id = ?""",
+                        (
+                            donor_user.git_email,
+                            json.dumps(donor_user.trackers, ensure_ascii=False),
+                            current_user.db_id,
+                        ),
+                    )
+                    changed += 1
         return changed
 
     def get_meta(self, key: str) -> str | None:

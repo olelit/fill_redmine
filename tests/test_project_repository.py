@@ -164,6 +164,26 @@ def test_replace_users_replaces_all(repo):
     assert [user.name for user in repo.list_users(project_id)] == ["Новый"]
 
 
+def test_delete_project_cascades_users(repo):
+    project_id = repo.add_project(make_project(users=[make_user()]))
+
+    repo.delete_project(project_id)
+
+    assert repo.list_users(project_id) == []
+    count = repo.conn.execute(
+        "SELECT COUNT(*) FROM project_users WHERE project_id = ?", (project_id,)
+    ).fetchone()[0]
+    assert count == 0
+
+
+def test_duplicate_user_name_raises(repo):
+    project_id = repo.add_project(make_project())
+    repo.add_user(project_id, make_user("Олег"))
+
+    with pytest.raises(sqlite3.IntegrityError):
+        repo.add_user(project_id, make_user("Олег"))
+
+
 def test_merge_users_from_updates_and_adds(repo):
     target_id = repo.add_project(make_project(name="Target", users=[make_user("Олег")]))
     donor = make_project(
