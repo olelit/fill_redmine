@@ -1,4 +1,4 @@
-from gui.ai_settings_validation import validate_ai_settings
+from gui.ai_settings_validation import request_is_current, validate_ai_settings
 
 
 def test_valid_settings():
@@ -30,3 +30,10 @@ def test_custom_requires_base_url():
     )
     assert settings is None
     assert any("base_url" in error for error in errors)
+
+
+def test_request_is_current():
+    assert request_is_current("tok", 2, "tok", 2) is True
+    assert request_is_current("other", 2, "tok", 2) is False
+    assert request_is_current("tok", 1, "tok", 2) is False
+

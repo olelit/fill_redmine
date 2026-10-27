@@ -1,10 +1,15 @@
 import tkinter as tk
+import uuid
 from collections.abc import Callable
 from tkinter import messagebox, ttk
 
 from clients.ai.factory import create_ai_client
 from configs.ai_settings import AiSettings
-from gui.ai_settings_validation import PROVIDERS, validate_ai_settings
+from gui.ai_settings_validation import (
+    PROVIDERS,
+    request_is_current,
+    validate_ai_settings,
+)
 from gui.worker import GuiWorker
 from storage.settings_repository import SettingsRepository
 
@@ -39,6 +44,9 @@ class AiSettingsDialog(tk.Toplevel):
         self.keys: dict[str, str] = dict(self.settings.keys)
         self.saved = False
         self.busy = False
+        self._token = uuid.uuid4().hex
+        self._request_seq = 0
+        self._request_id: int | None = None
         self._pending: str | None = None
         self._handlers: dict[str, Callable] = {}
         self._active_provider = (
@@ -139,15 +147,15 @@ class AiSettingsDialog(tk.Toplevel):
         ).grid(row=5, column=0, columnspan=3, sticky="we", pady=(8, 0))
 
     def _register_handlers(self) -> None:
-        self._register_handler("ai_models_done", self._on_models_done)
-        self._register_handler("ai_check_done", self._on_check_done)
-        self._register_handler("ai_error", self._on_worker_error)
+        self._register_handler("ai_result", self._on_result)
 
     def _register_handler(self, kind: str, handler: Callable) -> None:
         self._handlers[kind] = handler
         self.worker.register(kind, handler)
 
     def destroy(self) -> None:
+        self._request_id = None
+        self._pending = None
         for kind, handler in self._handlers.items():
             self.worker.unregister(kind, handler)
         self._handlers.clear()
@@ -166,8 +174,11 @@ class AiSettingsDialog(tk.Toplevel):
         self.keys[self._active_provider] = self.api_key.get()
         self._active_provider = provider
         self.api_key.set(self.keys.get(provider, ""))
-        current = self.model.get().strip()
-        self.model_combo.configure(values=[current] if current else [])
+        fallback = list(FALLBACK_MODELS.get(provider, ()))
+        self.model.set(fallback[0] if fallback else "")
+        self.model_combo.configure(values=fallback)
+        if provider != "custom":
+            self.base_url.set("")
         self._sync_base_url_row()
         self.log(f"Провайдер: {PROVIDER_LABELS[provider]}")
 
@@ -183,10 +194,11 @@ class AiSettingsDialog(tk.Toplevel):
         provider = self._provider_id()
         keys = dict(self.keys)
         keys[provider] = self.api_key.get()
+        base_url = self.base_url.get() if provider == "custom" else ""
         return validate_ai_settings(
             provider=provider,
             model=self.model.get(),
-            base_url=self.base_url.get(),
+            base_url=base_url,
             keys=keys,
         )
 
@@ -195,47 +207,104 @@ class AiSettingsDialog(tk.Toplevel):
         self.log(message)
         messagebox.showerror("Настройки AI", message, parent=self)
 
+    def _show_error(self, error: object) -> None:
+        message = str(error) if error is not None else ""
+        if not message and isinstance(error, BaseException):
+            message = error.__class__.__name__
+        if not message:
+            message = "Неизвестная ошибка"
+        self.log(f"Ошибка: {message}")
+        messagebox.showerror("Настройки AI", message, parent=self)
+
     def _set_busy(self, busy: bool) -> None:
         self.busy = busy
         state = "disabled" if busy else "normal"
         self.refresh_button.configure(state=state)
         self.check_button.configure(state=state)
         self.save_button.configure(state=state)
+        if busy:
+            self.provider_combo.configure(state="disabled")
+            self.model_combo.configure(state="disabled")
+        else:
+            self.provider_combo.configure(state="readonly")
+            self.model_combo.configure(state="normal")
+
+    def _run(
+        self,
+        token: str,
+        seq: int,
+        kind: str,
+        settings: AiSettings,
+    ) -> dict[str, object]:
+        try:
+            client = create_ai_client(settings)
+            data = (
+                client.list_models()
+                if kind == "models"
+                else client.check_connection()
+            )
+            return {
+                "token": token,
+                "seq": seq,
+                "kind": kind,
+                "ok": True,
+                "data": data,
+            }
+        except Exception as exc:
+            return {
+                "token": token,
+                "seq": seq,
+                "kind": kind,
+                "ok": False,
+                "error": exc,
+            }
+
+    def _submit(self, kind: str, settings: AiSettings) -> None:
+        self._request_seq += 1
+        seq = self._request_seq
+        token = self._token
+        self._request_id = seq
+        self._pending = kind
+        self._set_busy(True)
+        self.log(
+            "Загружаю модели…" if kind == "models" else "Проверяю подключение…"
+        )
+        self.worker.submit(
+            lambda: self._run(token, seq, kind, settings),
+            done_kind="ai_result",
+            error_kind="ai_result",
+        )
 
     def refresh_models(self) -> None:
         settings, errors = self._collect()
         if settings is None:
             self._show_errors(errors)
             return
-        self._pending = "models"
-        self._set_busy(True)
-        self.log("Загружаю модели…")
-        self.worker.submit(
-            lambda: create_ai_client(settings).list_models(),
-            done_kind="ai_models_done",
-            error_kind="ai_error",
-        )
+        self._submit("models", settings)
 
     def check_connection(self) -> None:
         settings, errors = self._collect()
         if settings is None:
             self._show_errors(errors)
             return
-        self._pending = "check"
-        self._set_busy(True)
-        self.log("Проверяю подключение…")
-        self.worker.submit(
-            lambda: create_ai_client(settings).check_connection(),
-            done_kind="ai_check_done",
-            error_kind="ai_error",
-        )
+        self._submit("check", settings)
 
     def save(self) -> None:
         settings, errors = self._collect()
         if settings is None:
             self._show_errors(errors)
             return
-        self.settings_repo.save_ai_settings(settings)
+        try:
+            self.settings_repo.save_ai_settings(settings)
+        except Exception as exc:
+            message = str(exc) or exc.__class__.__name__
+            self.log(f"Не удалось сохранить настройки: {message}")
+            messagebox.showerror(
+                "Настройки AI",
+                f"Не удалось сохранить настройки: {message}",
+                parent=self,
+            )
+            return
         self.saved = True
         self.destroy()
 
@@ -251,29 +320,41 @@ class AiSettingsDialog(tk.Toplevel):
         provider = self._provider_id()
         return list(FALLBACK_MODELS.get(provider, ()))
 
-    def _on_models_done(self, models: list[str]) -> None:
+    def _on_result(self, payload: object) -> None:
+        if not isinstance(payload, dict):
+            return
+        token = payload.get("token")
+        seq = payload.get("seq")
+        if not request_is_current(
+            token, seq, self._token, self._request_id
+        ):
+            return
+        kind = payload.get("kind")
+        ok = bool(payload.get("ok"))
+        self._request_id = None
         self._pending = None
-        self._apply_models(models)
-        if models:
-            self.log(f"Моделей получено: {len(models)}")
+        self._set_busy(False)
+
+        if kind == "models":
+            if ok:
+                data = payload.get("data")
+                models = list(data) if isinstance(data, list) else []
+                self._apply_models(models)
+                if models:
+                    self.log(f"Моделей получено: {len(models)}")
+                else:
+                    self.log(
+                        "Список моделей пуст — введите модель вручную"
+                    )
+            else:
+                self._apply_models(self._fallback_models())
+                self._show_error(payload.get("error"))
+            return
+
+        if ok:
+            self.log("Подключение работает")
+            messagebox.showinfo(
+                "Настройки AI", "Подключение работает", parent=self
+            )
         else:
-            self.log("Список моделей пуст — введите модель вручную")
-        self._set_busy(False)
-
-    def _on_check_done(self, result: object = None) -> None:
-        self._pending = None
-        self._set_busy(False)
-        self.log("Подключение работает")
-        messagebox.showinfo(
-            "Настройки AI", "Подключение работает", parent=self
-        )
-
-    def _on_worker_error(self, exc: Exception) -> None:
-        pending = self._pending
-        self._pending = None
-        if pending == "models":
-            self._apply_models(self._fallback_models())
-        self._set_busy(False)
-        message = str(exc) or exc.__class__.__name__
-        self.log(f"Ошибка: {message}")
-        messagebox.showerror("Настройки AI", message, parent=self)
+            self._show_error(payload.get("error"))
