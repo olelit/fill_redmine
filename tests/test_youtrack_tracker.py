@@ -1,7 +1,10 @@
 from datetime import date, datetime
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from clients.youtrack_client import YoutrackClient
+from dto.worklog_dto import WorklogDTO
 from trackers.youtrack import YoutrackTracker
 
 
@@ -51,7 +54,9 @@ def test_tracker_aggregates_minutes_by_day():
 
 
 def test_tracker_is_configured():
-    assert YoutrackTracker({"access_token": "token"}).is_configured()
+    assert YoutrackTracker(
+        {"access_token": "token", "issue_id": "PROJ-1"}
+    ).is_configured()
     assert not YoutrackTracker({}).is_configured()
 
 
@@ -59,3 +64,36 @@ def test_tracker_is_registered():
     from trackers.registry import get_tracker_class
 
     assert get_tracker_class("youtrack") is YoutrackTracker
+
+
+def test_create_worklogs_posts_work_items():
+    tracker = YoutrackTracker({"access_token": "token", "issue_id": "PROJ-1"})
+    response = MagicMock()
+    response.status_code = 200
+    response.text = "{}"
+
+    with patch(
+        "clients.youtrack_client.Config.get_youtrack_base_url",
+        return_value="http://youtrack",
+    ), patch(
+        "clients.youtrack_client.requests.post",
+        return_value=response,
+    ) as mock_post:
+        errors = tracker.create_worklogs(
+            [WorklogDTO(date="2026-10-27", hours=4, description="dev")]
+        )
+
+    assert errors == []
+    body = mock_post.call_args.kwargs["json"]
+    assert body["duration"]["minutes"] == 240
+    assert body["text"] == "dev"
+    assert "PROJ-1" in mock_post.call_args.args[0]
+
+
+def test_create_worklogs_requires_issue_id():
+    tracker = YoutrackTracker({"access_token": "token"})
+
+    with pytest.raises(ValueError, match="issue_id"):
+        tracker.create_worklogs(
+            [WorklogDTO(date="2026-10-27", hours=4, description="dev")]
+        )

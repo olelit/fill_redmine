@@ -8,6 +8,7 @@ import requests
 
 from configs.config import Config
 from dto.date_hours_dto import DateHoursDTO
+from dto.worklog_dto import WorklogDTO
 
 
 class RedmineClient:
@@ -91,6 +92,36 @@ class RedmineClient:
             print(f"XML parse error: {exc}")
 
         return spent_on_dates
+
+    def create_time_entries_sync(
+        self,
+        user_id: int,
+        issue_id: int,
+        activity_id: int,
+        records: list[WorklogDTO],
+    ) -> list[tuple[str, str]]:
+        url = f"{self.base_url}/time_entries.json"
+        headers = {"X-Redmine-API-Key": self.api_key}
+        errors: list[tuple[str, str]] = []
+        for record in records:
+            response = requests.post(
+                url,
+                headers=headers,
+                json={
+                    "time_entry": {
+                        "issue_id": issue_id,
+                        "user_id": user_id,
+                        "spent_on": record.date,
+                        "hours": record.hours,
+                        "activity_id": activity_id,
+                        "comments": record.description or "development",
+                    }
+                },
+                timeout=10,
+            )
+            if not 200 <= response.status_code < 300:
+                errors.append((record.date, f"{response.status_code} {response.text}"))
+        return errors
 
     async def create_time_entries(
         self,

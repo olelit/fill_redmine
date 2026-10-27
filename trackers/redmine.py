@@ -16,7 +16,6 @@ class RedmineTracker(BaseTracker):
         TrackerField("user_id", "user_id", kind="int"),
         TrackerField("activity_id", "activity_id", kind="int"),
         TrackerField("issue_id", "issue_id", kind="int"),
-        TrackerField("comment", "Комментарий", kind="textarea", required=False),
     )
 
     def get_worklogs(self, start: date, end: date) -> list[WorklogDTO]:
@@ -39,3 +38,12 @@ class RedmineTracker(BaseTracker):
                 )
             )
         return result
+
+    def create_worklogs(self, records: list[WorklogDTO]) -> list[tuple[str, str]]:
+        client = RedmineClient(api_key=self.config["api_key"])
+        return client.create_time_entries_sync(
+            user_id=int(self.config["user_id"]),
+            issue_id=int(self.config["issue_id"]),
+            activity_id=int(self.config["activity_id"]),
+            records=records,
+        )
