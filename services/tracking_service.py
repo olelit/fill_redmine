@@ -212,6 +212,15 @@ class TrackingService:
                 continue
             try:
                 tracker = self._tracker(user, report.destination_kind)
+                if not tracker.can_write:
+                    result.errors.append(
+                        (
+                            user.name,
+                            "",
+                            f"Трекер {tracker.label} не поддерживает запись",
+                        )
+                    )
+                    continue
                 records = [
                     WorklogDTO(
                         date=row.date,
@@ -233,6 +242,18 @@ class TrackingService:
                         result.written += 1
             except Exception as exc:
                 result.errors.append((user.name, "", str(exc)))
+
+        unmatched: dict[int, str] = {}
+        for row in report.rows:
+            if row.user_id in users:
+                continue
+            if not (row.include and row.proposed_hours > 0 and not row.error):
+                continue
+            row.status = "ошибка"
+            row.error = "юзер не найден"
+            unmatched.setdefault(row.user_id, row.user_name)
+        for user_name in unmatched.values():
+            result.errors.append((user_name, "", "юзер не найден"))
         return result
 
     def _add_commits_rows(

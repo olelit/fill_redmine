@@ -15,8 +15,14 @@ SYSTEM_PROMPT = """Ты — ассистент по учёту рабочего 
 коммитов; часы не больше deficit_hours и кратны 0.5; комментарии по-русски.
 """
 
+MAX_PERIOD_DAYS = 62
+MAX_COMMITS_PER_DAY = 20
 MAX_COMMIT_BODY_CHARS = 300
 CONFIDENCE_LEVELS = {"high", "medium", "low"}
+
+
+class TrackingPlanError(RuntimeError):
+    pass
 
 
 class TrackingPlanService:
@@ -36,6 +42,12 @@ class TrackingPlanService:
         end: date,
         commits: list[GitCommitDTO],
     ) -> CommitPlanDTO:
+        period_days = (end - start).days + 1
+        if period_days > MAX_PERIOD_DAYS:
+            raise TrackingPlanError(
+                f"Слишком длинный период: {period_days} дней, "
+                f"максимум {MAX_PERIOD_DAYS}"
+            )
         days: list[DayPlanDTO] = []
         current = start
         while current <= end:
@@ -56,6 +68,15 @@ class TrackingPlanService:
             )
             current += timedelta(days=1)
 
+        if not commits:
+            for day in days:
+                day.comment = "нет коммитов"
+            return CommitPlanDTO(summary="", days=days, raw_response="")
+
+        commits_by_date: dict[str, list[GitCommitDTO]] = {}
+        for commit in commits:
+            commits_by_date.setdefault(commit.date[:10], []).append(commit)
+
         payload = {
             "project": project.name,
             "user": user.name,
@@ -72,8 +93,9 @@ class TrackingPlanService:
                             "subject": commit.subject,
                             "body": commit.body[:MAX_COMMIT_BODY_CHARS],
                         }
-                        for commit in commits
-                        if commit.date[:10] == day.date
+                        for commit in commits_by_date.get(day.date, [])[
+                            :MAX_COMMITS_PER_DAY
+                        ]
                     ],
                 }
                 for day in days
@@ -91,6 +113,9 @@ class TrackingPlanService:
         commits: list[GitCommitDTO],
     ) -> CommitPlanDTO:
         by_date = {day.date: day for day in days}
+        commits_by_date: dict[str, list[GitCommitDTO]] = {}
+        for commit in commits:
+            commits_by_date.setdefault(commit.date[:10], []).append(commit)
         known = {commit.hash for commit in commits}
         items = raw.get("days", [])
         if not isinstance(items, list):
@@ -101,6 +126,8 @@ class TrackingPlanService:
             day = by_date.get(str(item.get("date", "")))
             if day is None:
                 continue
+            if not commits_by_date.get(day.date):
+                continue
             try:
                 hours = float(item.get("hours", 0))
             except (TypeError, ValueError):
@@ -110,11 +137,12 @@ class TrackingPlanService:
             day.planned_hours = max(0.0, min(hours, max_half))
             day.comment = str(item.get("comment", "")).strip()
             hashes = item.get("commit_hashes", [])
-            day.commit_hashes = (
+            accepted = (
                 [h for h in hashes if isinstance(h, str) and h in known]
                 if isinstance(hashes, list)
                 else []
             )
+            day.commit_hashes = list(dict.fromkeys(accepted))
             confidence = str(item.get("confidence", "low")).lower()
             day.confidence = (
                 confidence if confidence in CONFIDENCE_LEVELS else "low"

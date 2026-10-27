@@ -1,3 +1,4 @@
+import json
 from datetime import date
 
 import pytest
@@ -286,8 +287,12 @@ def test_destination_must_support_write():
 class FakeAi:
     def __init__(self, plan):
         self.plan = plan
+        self.calls = 0
+        self.last_prompt = ""
 
     def complete_json(self, system_prompt, user_prompt):
+        self.calls += 1
+        self.last_prompt = user_prompt
         return self.plan
 
 
@@ -392,7 +397,17 @@ def test_commits_source_clamps_hours_and_drops_unknown_hashes():
 def test_commits_source_rounds_hours_to_half():
     destination = FakeTracker({"token": "t"})
     service = TrackingService(tracker_builder=lambda kind, config: destination)
-    service.git_client_factory = lambda path: FakeGit([])
+    service.git_client_factory = lambda path: FakeGit(
+        [
+            GitCommitDTO(
+                hash="abc",
+                author_name="A",
+                author_email="a@example.com",
+                date="2026-10-01T10:00:00+00:00",
+                subject="Add feature",
+            )
+        ]
+    )
     service.ai_client_factory = lambda settings: FakeAi(
         {"days": [{"date": "2026-10-01", "hours": 3.7}]}
     )
@@ -429,6 +444,173 @@ def test_commits_source_reports_setup_errors():
 
     assert report.rows == []
     assert any("git-репозиторий" in error for error in report.errors)
+
+
+def test_commits_source_reports_missing_ai_settings():
+    service = TrackingService(tracker_builder=lambda kind, config: FakeTracker(config))
+    service.git_client_factory = lambda path: FakeGit([])
+
+    report = service.generate_report(
+        project_with_users(git_repo_path="/repo"),
+        selected_user_ids=[1],
+        destination_kind="fake",
+        source=TrackingSource.COMMITS,
+        source_kind="",
+        start=date(2026, 10, 1),
+        end=date(2026, 10, 1),
+        ai_settings=None,
+    )
+
+    assert report.rows == []
+    assert any("AI" in error for error in report.errors)
+
+
+def test_commits_source_reports_missing_git_email():
+    service = TrackingService(tracker_builder=lambda kind, config: FakeTracker(config))
+    service.git_client_factory = lambda path: FakeGit([])
+
+    report = service.generate_report(
+        project_with_users(
+            git_repo_path="/repo",
+            users=[
+                ProjectUserConfig(
+                    name="A",
+                    db_id=1,
+                    git_email="",
+                    trackers={"fake": {"token": "t"}},
+                )
+            ],
+        ),
+        selected_user_ids=[1],
+        destination_kind="fake",
+        source=TrackingSource.COMMITS,
+        source_kind="",
+        start=date(2026, 10, 1),
+        end=date(2026, 10, 1),
+        ai_settings=object(),
+    )
+
+    assert report.rows == []
+    assert any("git email" in error for error in report.errors)
+
+
+def test_commits_source_ignores_ai_hours_for_day_without_commits():
+    destination = FakeTracker({"token": "t"})
+    service = TrackingService(tracker_builder=lambda kind, config: destination)
+    service.git_client_factory = lambda path: FakeGit(
+        [
+            GitCommitDTO(
+                hash="abc",
+                author_name="A",
+                author_email="a@example.com",
+                date="2026-10-01T10:00:00+00:00",
+                subject="Add feature",
+            )
+        ]
+    )
+    service.ai_client_factory = lambda settings: FakeAi(
+        {
+            "days": [
+                {"date": "2026-10-01", "hours": 4, "commit_hashes": ["abc"]},
+                {"date": "2026-10-02", "hours": 8, "commit_hashes": []},
+            ]
+        }
+    )
+
+    report = service.generate_report(
+        project_with_users(git_repo_path="/repo"),
+        selected_user_ids=[1],
+        destination_kind="fake",
+        source=TrackingSource.COMMITS,
+        source_kind="",
+        start=date(2026, 10, 1),
+        end=date(2026, 10, 2),
+        ai_settings=object(),
+    )
+
+    by_date = {row.date: row for row in report.rows}
+    assert by_date["2026-10-01"].proposed_hours == 4
+    assert by_date["2026-10-02"].proposed_hours == 0
+    assert by_date["2026-10-02"].include is False
+
+
+def test_commits_source_without_commits_skips_ai():
+    destination = FakeTracker({"token": "t"})
+    service = TrackingService(tracker_builder=lambda kind, config: destination)
+    service.git_client_factory = lambda path: FakeGit([])
+    ai = FakeAi({"days": [{"date": "2026-10-01", "hours": 8}]})
+    service.ai_client_factory = lambda settings: ai
+
+    report = service.generate_report(
+        project_with_users(git_repo_path="/repo"),
+        selected_user_ids=[1],
+        destination_kind="fake",
+        source=TrackingSource.COMMITS,
+        source_kind="",
+        start=date(2026, 10, 1),
+        end=date(2026, 10, 2),
+        ai_settings=object(),
+    )
+
+    assert ai.calls == 0
+    assert [row.proposed_hours for row in report.rows] == [0, 0]
+    assert [row.comment for row in report.rows] == ["нет коммитов", "нет коммитов"]
+
+
+def test_commits_source_rejects_period_longer_than_limit():
+    service = TrackingService(tracker_builder=lambda kind, config: FakeTracker(config))
+    service.git_client_factory = lambda path: FakeGit([])
+    service.ai_client_factory = lambda settings: FakeAi({"days": []})
+
+    report = service.generate_report(
+        project_with_users(git_repo_path="/repo"),
+        selected_user_ids=[1],
+        destination_kind="fake",
+        source=TrackingSource.COMMITS,
+        source_kind="",
+        start=date(2026, 1, 1),
+        end=date(2026, 3, 10),
+        ai_settings=object(),
+    )
+
+    assert report.rows == []
+    assert any("период" in error.lower() for error in report.errors)
+
+
+def test_commits_source_caps_commits_and_truncates_bodies():
+    destination = FakeTracker({"token": "t"})
+    service = TrackingService(tracker_builder=lambda kind, config: destination)
+    commits = [
+        GitCommitDTO(
+            hash=f"h{index:02d}",
+            author_name="A",
+            author_email="a@example.com",
+            date="2026-10-01T10:00:00+00:00",
+            subject=f"Commit {index}",
+            body="x" * 500,
+        )
+        for index in range(21)
+    ]
+    service.git_client_factory = lambda path: FakeGit(commits)
+    ai = FakeAi({"days": []})
+    service.ai_client_factory = lambda settings: ai
+
+    service.generate_report(
+        project_with_users(git_repo_path="/repo"),
+        selected_user_ids=[1],
+        destination_kind="fake",
+        source=TrackingSource.COMMITS,
+        source_kind="",
+        start=date(2026, 10, 1),
+        end=date(2026, 10, 1),
+        ai_settings=object(),
+    )
+
+    payload = json.loads(ai.last_prompt)
+    sent = payload["days"][0]["commits"]
+    assert len(sent) == 20
+    assert len({commit["hash"] for commit in sent}) == 20
+    assert all(len(commit["body"]) <= 300 for commit in sent)
 
 
 def test_write_report_writes_only_included_rows():

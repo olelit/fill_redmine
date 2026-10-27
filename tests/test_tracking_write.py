@@ -81,6 +81,44 @@ def make_report(*rows):
     )
 
 
+class ReadOnlyTracker(FakeTracker):
+    can_write = False
+
+
+def test_write_report_refuses_read_only_tracker():
+    tracker = ReadOnlyTracker({"token": "a"})
+    service = TrackingService(tracker_builder=lambda kind, config: tracker)
+    report = make_report(make_row())
+
+    result = service.write_report(project_with_users(), report)
+
+    assert tracker.written == []
+    assert result.written == 0
+    assert any("не поддерживает запись" in error[2] for error in result.errors)
+    assert report.rows[0].status == ""
+    assert report.rows[0].include is True
+
+
+def test_write_report_marks_rows_with_unknown_user():
+    tracker = FakeTracker({"token": "a"})
+    service = TrackingService(tracker_builder=lambda kind, config: tracker)
+    report = make_report(
+        make_row(
+            row_id="99:2026-10-01",
+            user_id=99,
+            user_name="Ghost",
+        )
+    )
+
+    result = service.write_report(project_with_users(), report)
+
+    assert tracker.written == []
+    assert result.written == 0
+    assert report.rows[0].status == "ошибка"
+    assert report.rows[0].error == "юзер не найден"
+    assert any("юзер не найден" in error[2] for error in result.errors)
+
+
 def test_write_report_skips_excluded_and_zero_rows():
     tracker = FakeTracker({"token": "a"})
     service = TrackingService(tracker_builder=lambda kind, config: tracker)
