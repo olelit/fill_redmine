@@ -3,12 +3,15 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 
-from configs.project_config import ProjectConfig
+from configs.ai_settings import AiSettings
+from configs.project_config import ProjectConfig, ProjectUserConfig
 from storage.project_repository import ProjectRepository
+from storage.settings_repository import SettingsRepository
 from storage.user_repository import UserRepository
 
 DEFAULT_USER_LIST_PATH = Path(__file__).resolve().parent.parent / "user_list.py"
 USERS_MIGRATED_KEY = "legacy_users_migrated"
+SCHEMA_VERSION_KEY = "schema_version"
 
 
 def migrate_from_user_list(
@@ -101,3 +104,43 @@ def migrate_users_to_projects(
 
     log(f"Юзеры перенесены в проекты: {len(projects)}")
     return len(projects)
+
+
+def migrate_projects_to_v2(
+    project_repo: ProjectRepository,
+    settings_repo: SettingsRepository,
+    log: Callable[[str], None] = print,
+) -> int:
+    if project_repo.get_meta(SCHEMA_VERSION_KEY) == "2":
+        return 0
+
+    projects = project_repo.list_projects()
+    migrated = 0
+    for project in projects:
+        if not project.users:
+            project_repo.add_user(
+                project.db_id,
+                ProjectUserConfig(
+                    name=project.name,
+                    git_email=project.git_author_email,
+                    trackers=project.trackers,
+                ),
+            )
+            migrated += 1
+
+    if settings_repo.get_raw("ai_settings") is None:
+        legacy = next((p.ai for p in projects if p.ai), None)
+        if legacy:
+            settings_repo.save_ai_settings(
+                AiSettings(
+                    provider="custom",
+                    model=str(legacy.get("model", "")),
+                    base_url=str(legacy.get("base_url", "")),
+                    keys={"custom": str(legacy.get("api_key", ""))},
+                )
+            )
+
+    project_repo.set_meta(SCHEMA_VERSION_KEY, "2")
+    log(f"Миграция схемы v2: юзеров создано {migrated}")
+    return migrated
+
