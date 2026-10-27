@@ -3,6 +3,7 @@ from gui.settings_validation import (
     duplicate_user_names,
     validate_project_settings,
     validate_user_settings,
+    validate_users_for_save,
 )
 
 
@@ -77,6 +78,41 @@ def test_user_settings_empty_tracker_is_allowed():
     user, errors = validate_user_settings("Олег", "", {"redmine": {}})
     assert errors == []
     assert user.trackers == {}
+
+
+def test_user_settings_rejects_whitespace_only_tracker_field():
+    user, errors = validate_user_settings(
+        "Олег",
+        "",
+        {
+            "redmine": {
+                "api_key": "   ",
+                "user_id": "16",
+                "activity_id": "9",
+                "issue_id": "2682",
+            }
+        },
+    )
+    assert user is None
+    assert any("Redmine" in error for error in errors)
+
+
+def test_user_settings_rejects_whitespace_only_name():
+    user, errors = validate_user_settings(" \t\n ", "", {})
+    assert user is None
+    assert any("имя" in error.lower() for error in errors)
+
+
+def test_validate_users_for_save_rejects_blank_name():
+    errors = validate_users_for_save([ProjectUserConfig(name="   ")], [])
+    assert "Имя юзера не может быть пустым" in errors
+
+
+def test_validate_users_for_save_rejects_bad_exclude_date():
+    errors = validate_users_for_save(
+        [ProjectUserConfig(name="Олег")], ["2026-10-05", "05.10.2026"]
+    )
+    assert any("05.10.2026" in error for error in errors)
 
 
 def test_user_settings_requires_name():

@@ -1,3 +1,5 @@
+from datetime import date
+
 from configs.project_config import ProjectConfig, ProjectUserConfig
 from trackers.registry import all_trackers
 
@@ -55,7 +57,10 @@ def validate_user_settings(
 
     trackers: dict[str, dict] = {}
     for cls in all_trackers():
-        values = tracker_values.get(cls.kind, {})
+        values = {
+            key: value.strip() if isinstance(value, str) else value
+            for key, value in tracker_values.get(cls.kind, {}).items()
+        }
         cls_errors = cls.validate_config(values)
         errors.extend(cls_errors)
         if cls_errors:
@@ -87,6 +92,29 @@ def validate_user_settings(
         ),
         [],
     )
+
+
+def _is_iso_date(value: object) -> bool:
+    try:
+        date.fromisoformat(str(value).strip())
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def validate_users_for_save(
+    users: list[ProjectUserConfig], exclude_dates: list[str]
+) -> list[str]:
+    errors: list[str] = []
+    if any(not user.name.strip() for user in users):
+        errors.append("Имя юзера не может быть пустым")
+    bad_dates = [value for value in exclude_dates if not _is_iso_date(value)]
+    if bad_dates:
+        errors.append(
+            "Некорректные даты исключений (нужен формат ГГГГ-ММ-ДД): "
+            + ", ".join(bad_dates)
+        )
+    return errors
 
 
 def duplicate_user_names(users: list[ProjectUserConfig]) -> list[str]:

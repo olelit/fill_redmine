@@ -3,7 +3,11 @@ from collections.abc import Callable
 from tkinter import filedialog, messagebox, ttk
 
 from configs.project_config import ProjectConfig, ProjectUserConfig
-from gui.settings_validation import duplicate_user_names, validate_project_settings
+from gui.settings_validation import (
+    duplicate_user_names,
+    validate_project_settings,
+    validate_users_for_save,
+)
 from gui.user_editor import UserEditor
 from gui.validation import parse_exclude_date
 from storage.project_repository import ProjectRepository
@@ -388,6 +392,7 @@ class ProjectSettingsPanel(ttk.LabelFrame):
         project, errors = validate_project_settings(
             self._form_values(), self.exclude_dates
         )
+        errors.extend(validate_users_for_save(self.users, self.exclude_dates))
         duplicates = duplicate_user_names(self.users)
         if duplicates:
             errors.append(
