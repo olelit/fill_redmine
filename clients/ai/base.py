@@ -18,13 +18,25 @@ def parse_json_object(text: str) -> dict:
         cleaned = cleaned.split("\n", 1)[-1]
         cleaned = cleaned.rsplit("```", 1)[0]
     start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start == -1 or end == -1:
+    if start == -1:
         raise AiError("ИИ вернул ответ без JSON-объекта")
     try:
-        parsed = json.loads(cleaned[start : end + 1])
+        parsed, _ = json.JSONDecoder().raw_decode(cleaned[start:])
     except json.JSONDecodeError as exc:
         raise AiError(f"ИИ вернул невалидный JSON: {exc}") from exc
     if not isinstance(parsed, dict):
         raise AiError("ИИ вернул JSON не-объект")
     return parsed
+
+
+def parse_model_list(payload: object) -> list[str]:
+    if not isinstance(payload, dict):
+        raise AiError("Неожиданный ответ списка моделей")
+    data = payload.get("data", [])
+    if not isinstance(data, list):
+        raise AiError("Неожиданный ответ списка моделей")
+    return sorted(
+        str(item["id"])
+        for item in data
+        if isinstance(item, dict) and item.get("id")
+    )

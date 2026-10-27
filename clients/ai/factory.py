@@ -8,21 +8,22 @@ PROVIDERS = ("opencode_go", "openai", "anthropic", "custom")
 
 
 def create_ai_client(settings: AiSettings) -> AiClient:
-    key = settings.key_for(settings.provider)
+    provider = settings.provider.strip().lower()
+    if provider not in PROVIDERS:
+        raise AiError(f"Неизвестный AI-провайдер: {settings.provider}")
+    key = settings.key_for(provider)
     if not settings.model:
         raise AiError("Не задана модель ИИ")
+    if provider == "custom" and not settings.base_url:
+        raise AiError("Не задан base_url для custom-провайдера")
     if not key:
         raise AiError(f"Не задан API-ключ для {settings.provider}")
-    if settings.provider == "opencode_go":
+    if provider == "opencode_go":
         return OpenCodeGoClient(settings.model, key)
-    if settings.provider == "openai":
+    if provider == "openai":
         return OpenAIChatClient("https://api.openai.com/v1", settings.model, key)
-    if settings.provider == "anthropic":
+    if provider == "anthropic":
         return AnthropicMessagesClient(
             "https://api.anthropic.com/v1", settings.model, key
         )
-    if settings.provider == "custom":
-        if not settings.base_url:
-            raise AiError("Не задан base_url для custom-провайдера")
-        return OpenAIChatClient(settings.base_url, settings.model, key)
-    raise AiError(f"Неизвестный AI-провайдер: {settings.provider}")
+    return OpenAIChatClient(settings.base_url, settings.model, key)

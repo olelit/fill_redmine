@@ -1,6 +1,6 @@
 import requests
 
-from clients.ai.base import AiError, parse_json_object
+from clients.ai.base import AiError, parse_json_object, parse_model_list
 
 
 class OpenAIChatClient:
@@ -61,8 +61,11 @@ class OpenAIChatClient:
             raise AiError(f"Ошибка сети ИИ: {exc}") from exc
         if not 200 <= response.status_code < 300:
             raise AiError(f"HTTP {response.status_code}: {response.text[:500]}")
-        data = response.json().get("data", [])
-        return sorted(str(item["id"]) for item in data if "id" in item)
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise AiError(f"Неожиданный ответ списка моделей: {exc}") from exc
+        return parse_model_list(payload)
 
     def check_connection(self) -> None:
         self.list_models()

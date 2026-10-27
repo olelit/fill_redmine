@@ -1,6 +1,6 @@
 import requests
 
-from clients.ai.base import AiError, parse_json_object
+from clients.ai.base import AiError, parse_json_object, parse_model_list
 
 
 class OpenAIResponsesClient:
@@ -39,16 +39,24 @@ class OpenAIResponsesClient:
             raise AiError(f"Ошибка сети ИИ: {exc}") from exc
         if not 200 <= response.status_code < 300:
             raise AiError(f"HTTP {response.status_code}: {response.text[:500]}")
-        payload = response.json()
-        text = payload.get("output_text")
-        if not text:
-            parts: list[str] = []
-            for item in payload.get("output", []):
-                for content in item.get("content", []):
-                    if content.get("type") == "output_text":
-                        parts.append(content.get("text", ""))
-            text = "".join(parts)
-        if not text:
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise AiError(f"Неожиданный ответ ИИ: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise AiError("Неожиданный ответ ИИ")
+        try:
+            text = payload.get("output_text")
+            if not text:
+                parts: list[str] = []
+                for item in payload.get("output", []):
+                    for content in item.get("content", []):
+                        if content.get("type") == "output_text":
+                            parts.append(content.get("text", ""))
+                text = "".join(parts)
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            raise AiError(f"Неожиданный ответ ИИ: {exc}") from exc
+        if not isinstance(text, str) or not text:
             raise AiError("ИИ вернул пустой ответ")
         return parse_json_object(text)
 
@@ -63,8 +71,11 @@ class OpenAIResponsesClient:
             raise AiError(f"Ошибка сети ИИ: {exc}") from exc
         if not 200 <= response.status_code < 300:
             raise AiError(f"HTTP {response.status_code}: {response.text[:500]}")
-        data = response.json().get("data", [])
-        return sorted(str(item["id"]) for item in data if "id" in item)
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise AiError(f"Неожиданный ответ списка моделей: {exc}") from exc
+        return parse_model_list(payload)
 
     def check_connection(self) -> None:
         self.list_models()
