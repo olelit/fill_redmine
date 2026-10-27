@@ -37,6 +37,10 @@ class TrackingService:
         end: date,
         ai_settings: Any | None = None,
     ) -> TrackingReport:
+        try:
+            source = TrackingSource(source)
+        except ValueError as exc:
+            raise TrackingError(f"Неизвестный источник: {source}") from exc
         if start > end:
             raise TrackingError("Начало периода позже конца")
         if source is TrackingSource.TRACKER and source_kind == destination_kind:
@@ -82,7 +86,13 @@ class TrackingService:
         end: date,
         ai_settings: Any | None,
     ) -> None:
+        if user.db_id is None:
+            raise TrackingError("У юзера нет id")
         destination = self._tracker(user, destination_kind)
+        if not destination.can_write:
+            raise TrackingError(
+                f"Трекер {destination.label} не поддерживает запись"
+            )
         existing = self._existing_by_day(destination, start, end)
         if source is TrackingSource.AUTOFILL:
             self._add_autofill_rows(report, project, user, existing, start, end)
@@ -92,7 +102,7 @@ class TrackingService:
             source_by_day = self._existing_by_day(source_tracker, start, end)
             self._add_tracker_rows(report, project, user, existing, source_by_day, start, end)
             return
-        raise TrackingError(f"Источник {source} пока не поддерживается")
+        raise TrackingError(f"Источник {source.value} пока не поддерживается")
 
     def _tracker(self, user: ProjectUserConfig, kind: str) -> BaseTracker:
         tracker = self.tracker_builder(kind, user.trackers.get(kind, {}))

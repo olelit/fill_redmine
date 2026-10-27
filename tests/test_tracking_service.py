@@ -164,3 +164,119 @@ def test_missing_destination_config_is_reported():
 
     assert report.rows == []
     assert any("A" in error for error in report.errors)
+
+
+def test_source_accepts_plain_string():
+    source = FakeTracker(
+        {"token": "t"},
+        worklogs=[WorklogDTO(date="2026-10-01", hours=4)],
+    )
+    service = TrackingService(
+        tracker_builder=lambda kind, config: source if kind == "source" else FakeTracker(config)
+    )
+    project = project_with_users(
+        users=[
+            ProjectUserConfig(
+                name="A",
+                db_id=1,
+                trackers={"fake": {"token": "t"}, "source": {"token": "t"}},
+            )
+        ]
+    )
+
+    report = service.generate_report(
+        project,
+        selected_user_ids=[1],
+        destination_kind="fake",
+        source="tracker",
+        source_kind="source",
+        start=date(2026, 10, 1),
+        end=date(2026, 10, 1),
+    )
+
+    assert report.errors == []
+    assert [(r.date, r.proposed_hours) for r in report.rows] == [("2026-10-01", 4)]
+
+
+def test_tracker_source_keeps_destination_existing_hours():
+    destination = FakeTracker(
+        {"token": "t"},
+        worklogs=[WorklogDTO(date="2026-10-01", hours=2)],
+    )
+    source = FakeTracker(
+        {"token": "t"},
+        worklogs=[WorklogDTO(date="2026-10-01", hours=4)],
+    )
+    service = TrackingService(
+        tracker_builder=lambda kind, config: source if kind == "source" else destination
+    )
+    project = project_with_users(
+        users=[
+            ProjectUserConfig(
+                name="A",
+                db_id=1,
+                trackers={"fake": {"token": "t"}, "source": {"token": "t"}},
+            )
+        ]
+    )
+
+    report = service.generate_report(
+        project,
+        selected_user_ids=[1],
+        destination_kind="fake",
+        source=TrackingSource.TRACKER,
+        source_kind="source",
+        start=date(2026, 10, 1),
+        end=date(2026, 10, 1),
+    )
+
+    assert len(report.rows) == 1
+    row = report.rows[0]
+    assert row.existing_hours == 2
+    assert row.proposed_hours == 4
+
+
+def test_one_user_error_does_not_block_another():
+    service = TrackingService(tracker_builder=lambda kind, config: FakeTracker(config))
+    project = project_with_users(
+        users=[
+            ProjectUserConfig(name="A", db_id=1, trackers={}),
+            ProjectUserConfig(name="B", db_id=2, trackers={"fake": {"token": "t"}}),
+        ]
+    )
+
+    report = service.generate_report(
+        project,
+        selected_user_ids=[1, 2],
+        destination_kind="fake",
+        source=TrackingSource.AUTOFILL,
+        source_kind="",
+        start=date(2026, 10, 1),
+        end=date(2026, 10, 2),
+    )
+
+    assert report.rows
+    assert all(row.user_name == "B" for row in report.rows)
+    assert any("A" in error for error in report.errors)
+
+
+class ReadOnlyTracker(FakeTracker):
+    can_write = False
+
+
+def test_destination_must_support_write():
+    service = TrackingService(tracker_builder=lambda kind, config: ReadOnlyTracker(config))
+
+    report = service.generate_report(
+        project_with_users(),
+        selected_user_ids=[1, 2],
+        destination_kind="fake",
+        source=TrackingSource.AUTOFILL,
+        source_kind="",
+        start=date(2026, 10, 1),
+        end=date(2026, 10, 2),
+    )
+
+    assert report.rows == []
+    assert report.errors
+    assert all("не поддерживает запись" in error for error in report.errors)
