@@ -27,7 +27,22 @@ CREATE TABLE IF NOT EXISTS projects (
     workday_hours REAL NOT NULL DEFAULT 8,
     exclude_dates TEXT NOT NULL DEFAULT '[]',
     trackers_json TEXT NOT NULL DEFAULT '{}',
-    ai_json TEXT NOT NULL DEFAULT '{}'
+    ai_json TEXT NOT NULL DEFAULT '{}',
+    default_comment TEXT NOT NULL DEFAULT 'development'
+);
+
+CREATE TABLE IF NOT EXISTS project_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    git_email TEXT NOT NULL DEFAULT '',
+    trackers_json TEXT NOT NULL DEFAULT '{}',
+    UNIQUE(project_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS app_meta (
@@ -90,6 +105,17 @@ def get_connection(db_path: Path | str | None = None) -> sqlite3.Connection:
     return conn
 
 
+def _ensure_project_columns(conn: sqlite3.Connection) -> None:
+    columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(projects)")
+    }
+    if "default_comment" not in columns:
+        conn.execute(
+            "ALTER TABLE projects ADD COLUMN default_comment TEXT NOT NULL DEFAULT 'development'"
+        )
+
+
 def create_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    _ensure_project_columns(conn)
     conn.commit()

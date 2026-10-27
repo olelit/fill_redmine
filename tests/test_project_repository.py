@@ -2,7 +2,7 @@ import sqlite3
 
 import pytest
 
-from configs.project_config import ProjectConfig
+from configs.project_config import ProjectConfig, ProjectUserConfig
 from storage.project_repository import ProjectRepository
 
 
@@ -113,3 +113,77 @@ def test_meta_roundtrip(repo):
     repo.set_meta("legacy_users_migrated", "1")
 
     assert repo.get_meta("legacy_users_migrated") == "1"
+
+
+def make_user(name="Олег", **overrides) -> ProjectUserConfig:
+    data = dict(
+        name=name,
+        git_email=f"{name.lower()}@example.com",
+        trackers={
+            "redmine": {
+                "api_key": "key",
+                "user_id": 16,
+                "activity_id": 9,
+                "issue_id": 2682,
+            },
+            "youtrack": {"access_token": "token", "issue_id": "PROJ-1"},
+        },
+    )
+    data.update(overrides)
+    return ProjectUserConfig(**data)
+
+
+def test_project_users_roundtrip(repo):
+    db_id = repo.add_project(make_project(users=[make_user()]))
+
+    project = repo.get_project(db_id)
+
+    assert project.default_comment == "development"
+    assert len(project.users) == 1
+    assert project.users[0].name == "Олег"
+    assert project.users[0].trackers["youtrack"]["issue_id"] == "PROJ-1"
+
+
+def test_add_update_delete_user(repo):
+    project_id = repo.add_project(make_project())
+    user_id = repo.add_user(project_id, make_user("Первый"))
+
+    repo.update_user(user_id, make_user("Второй", git_email="new@example.com"))
+    assert repo.list_users(project_id)[0].name == "Второй"
+    assert repo.list_users(project_id)[0].git_email == "new@example.com"
+
+    repo.delete_user(user_id)
+    assert repo.list_users(project_id) == []
+
+
+def test_replace_users_replaces_all(repo):
+    project_id = repo.add_project(make_project(users=[make_user("Старый")]))
+
+    repo.replace_users(project_id, [make_user("Новый")])
+
+    assert [user.name for user in repo.list_users(project_id)] == ["Новый"]
+
+
+def test_merge_users_from_updates_and_adds(repo):
+    target_id = repo.add_project(make_project(name="Target", users=[make_user("Олег")]))
+    donor = make_project(
+        name="Donor",
+        git_repo_path="/donor/repo",
+        workday_hours=7.5,
+        default_comment="donor",
+        users=[
+            make_user("Олег", git_email="updated@example.com"),
+            make_user("Новый"),
+        ],
+    )
+    donor_id = repo.add_project(donor)
+    donor = repo.get_project(donor_id)
+
+    repo.merge_users_from(target_id, donor)
+
+    target = repo.get_project(target_id)
+    assert target.git_repo_path == "/donor/repo"
+    assert target.workday_hours == 7.5
+    assert target.default_comment == "donor"
+    assert [user.name for user in target.users] == ["Олег", "Новый"]
+    assert target.users[0].git_email == "updated@example.com"
