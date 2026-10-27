@@ -21,11 +21,13 @@ class ProjectSettingsPanel(ttk.LabelFrame):
         project: ProjectConfig,
         repo: ProjectRepository,
         on_saved: Callable[[ProjectConfig], None],
+        on_selection_changed: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent, text="Настройки проекта", padding=8)
         self.project = project
         self.repo = repo
         self.on_saved = on_saved
+        self.on_selection_changed = on_selection_changed
         self.users: list[ProjectUserConfig] = []
         self.selected_vars: dict[str, tk.BooleanVar] = {}
         self.users_by_iid: dict[str, ProjectUserConfig] = {}
@@ -159,6 +161,24 @@ class ProjectSettingsPanel(ttk.LabelFrame):
             self.body.pack(fill="both", expand=True)
             self.toggle_button.configure(text="Свернуть")
 
+    def set_busy(self, busy: bool) -> None:
+        self._set_widgets_busy(self.body, busy)
+
+    def _set_widgets_busy(self, widget: tk.Misc, busy: bool) -> None:
+        try:
+            if isinstance(widget, ttk.Widget):
+                widget.state(["disabled"] if busy else ["!disabled"])
+            else:
+                widget.configure(state="disabled" if busy else "normal")
+        except tk.TclError:
+            pass
+        for child in widget.winfo_children():
+            self._set_widgets_busy(child, busy)
+
+    def _notify_selection_changed(self) -> None:
+        if self.on_selection_changed is not None:
+            self.on_selection_changed()
+
     def reload(self, project: ProjectConfig) -> None:
         self.project = project
         self.users = list(project.users)
@@ -229,6 +249,7 @@ class ProjectSettingsPanel(ttk.LabelFrame):
         user = self.users_by_iid.get(iid) if iid is not None else None
         if iid is not None and user is not None:
             self.users_tree.item(iid, values=self._user_values(user))
+        self._notify_selection_changed()
 
     def _on_tree_click(self, event: tk.Event) -> str | None:
         if self.users_tree.identify_region(event.x, event.y) != "cell":
@@ -287,6 +308,7 @@ class ProjectSettingsPanel(ttk.LabelFrame):
         self._refresh_users(preserve_selection=True)
         self.error_label.configure(text="")
         self.status_label.configure(text=f"Добавлен юзер: {editor.result.name}")
+        self._notify_selection_changed()
 
     def edit_user(self) -> None:
         user = self._selected_user()
@@ -321,6 +343,7 @@ class ProjectSettingsPanel(ttk.LabelFrame):
             self.users_tree.item(iid, values=self._user_values(editor.result))
         self.error_label.configure(text="")
         self.status_label.configure(text=f"Изменён юзер: {new_name}")
+        self._notify_selection_changed()
 
     def delete_user(self) -> None:
         user = self._selected_user()
@@ -337,6 +360,7 @@ class ProjectSettingsPanel(ttk.LabelFrame):
         self._refresh_users(preserve_selection=True)
         self.error_label.configure(text="")
         self.status_label.configure(text=f"Удалён юзер: {user.name}")
+        self._notify_selection_changed()
 
     def import_from_project(self) -> None:
         if self.project.db_id is None:

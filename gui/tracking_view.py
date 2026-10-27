@@ -1,6 +1,7 @@
 import calendar
 import copy
 import tkinter as tk
+import uuid
 from collections.abc import Callable
 from datetime import date
 from tkinter import messagebox, ttk
@@ -29,6 +30,8 @@ SOURCE_KINDS_BY_LABEL: dict[str, str] = {
 
 def _trackers_for_users(
     users: list[ProjectUserConfig],
+    require_read: bool = True,
+    require_write: bool = False,
 ) -> list[type[BaseTracker]]:
     kinds = {
         kind
@@ -37,7 +40,11 @@ def _trackers_for_users(
         if config
     }
     return [
-        cls for cls in all_trackers() if cls.kind in kinds and cls.can_read
+        cls
+        for cls in all_trackers()
+        if cls.kind in kinds
+        and (not require_read or cls.can_read)
+        and (not require_write or cls.can_write)
     ]
 
 
@@ -63,6 +70,9 @@ class TrackingView(ttk.Frame):
         self.on_back = on_back
         self.report: TrackingReport | None = None
         self._busy = False
+        self._token = uuid.uuid4().hex
+        self._request_seq = 0
+        self._request_id: int | None = None
         self.destination_by_label: dict[str, str] = {}
         self.source_kind_by_label: dict[str, str] = {}
         self.rows_by_iid: dict[str, TrackingRow] = {}
@@ -85,9 +95,10 @@ class TrackingView(ttk.Frame):
     def _build(self) -> None:
         header = ttk.Frame(self)
         header.pack(fill="x")
-        ttk.Button(
-            header, text="← Проект", command=self.on_back
-        ).pack(side="left")
+        self.back_button = ttk.Button(
+            header, text="← Проект", command=self._on_back
+        )
+        self.back_button.pack(side="left")
         ttk.Label(
             header,
             text=f"Трекинг времени — {self.project.name}",
@@ -95,7 +106,11 @@ class TrackingView(ttk.Frame):
         ).pack(side="left", padx=12)
 
         self.settings_panel = ProjectSettingsPanel(
-            self, self.project, self.repo, on_saved=self._on_settings_saved
+            self,
+            self.project,
+            self.repo,
+            on_saved=self._on_settings_saved,
+            on_selection_changed=self._on_selection_changed,
         )
         self.settings_panel.pack(fill="x", pady=(6, 0))
 
@@ -225,11 +240,15 @@ class TrackingView(ttk.Frame):
         self.start_entry.pack(side="left", padx=4)
         self.start_entry.insert(0, start.isoformat())
         self.start_entry.bind("<KeyRelease>", self._on_period_changed)
+        self.start_entry.bind("<<Paste>>", self._on_period_changed)
+        self.start_entry.bind("<FocusOut>", self._on_period_changed)
         ttk.Label(period, text="—").pack(side="left")
         self.end_entry = ttk.Entry(period, width=12)
         self.end_entry.pack(side="left", padx=4)
         self.end_entry.insert(0, end.isoformat())
         self.end_entry.bind("<KeyRelease>", self._on_period_changed)
+        self.end_entry.bind("<<Paste>>", self._on_period_changed)
+        self.end_entry.bind("<FocusOut>", self._on_period_changed)
 
         self.generate_button = ttk.Button(
             controls, text="Сгенерировать отчёт", command=self._generate
@@ -255,6 +274,7 @@ class TrackingView(ttk.Frame):
             self.worker.register(kind, handler)
 
     def destroy(self) -> None:
+        self._request_id = None
         for kind, handler in self._handlers.items():
             self.worker.unregister(kind, handler)
         self._handlers.clear()
@@ -279,8 +299,10 @@ class TrackingView(ttk.Frame):
         return SOURCE_KINDS_BY_LABEL.get(self.source_label.get(), "autofill")
 
     def refresh_trackers(self) -> None:
-        classes = _trackers_for_users(self._selected_users())
-        destinations = [cls for cls in classes if cls.can_write]
+        users = self._selected_users()
+        destinations = _trackers_for_users(
+            users, require_read=False, require_write=True
+        )
         self.destination_by_label = {
             cls.label: cls.kind for cls in destinations
         }
@@ -324,6 +346,17 @@ class TrackingView(ttk.Frame):
         self.refresh_trackers()
         self.log("Настройки проекта обновлены")
 
+    def _on_selection_changed(self) -> None:
+        self.refresh_trackers()
+        self.log("Выбор юзеров изменён")
+
+    def _on_back(self) -> None:
+        if self._busy and not messagebox.askyesno(
+            "Трекинг", "Генерация выполняется. Выйти?", parent=self
+        ):
+            return
+        self.on_back()
+
     def _on_destination_changed(self, _event: tk.Event | None = None) -> None:
         self._refresh_source_trackers()
         self._reset_report()
@@ -342,6 +375,7 @@ class TrackingView(ttk.Frame):
             self._reset_report()
 
     def _reset_report(self) -> None:
+        self._request_id = None
         self.report = None
         self.report_tree.delete(*self.report_tree.get_children())
         self.rows_by_iid.clear()
@@ -389,27 +423,54 @@ class TrackingView(ttk.Frame):
 
         project = copy.deepcopy(self.project)
         self._reset_report()
+        self._request_seq += 1
+        rid = self._request_seq
+        token = self._token
+        self._request_id = rid
         self.log(
             f"Генерирую отчёт за {data['start']} — {data['end']} "
             f"({data['source']})"
         )
         self._set_busy(True)
+
+        def run() -> dict[str, Any]:
+            try:
+                report = self.service.generate_report(
+                    project,
+                    data["user_ids"],
+                    data["destination"],
+                    data["source"],
+                    data["source_kind"],
+                    data["start"],
+                    data["end"],
+                    ai_settings=ai_settings,
+                )
+                return {"token": token, "request_id": rid, "report": report}
+            except Exception as exc:
+                return {"token": token, "request_id": rid, "error": exc}
+
         self.worker.submit(
-            lambda: self.service.generate_report(
-                project,
-                data["user_ids"],
-                data["destination"],
-                data["source"],
-                data["source_kind"],
-                data["start"],
-                data["end"],
-                ai_settings=ai_settings,
-            ),
+            run,
             done_kind="tracking_report_done",
             error_kind="tracking_error",
         )
 
-    def _on_report_done(self, report: TrackingReport) -> None:
+    def _on_report_done(self, payload: object) -> None:
+        if not isinstance(payload, dict):
+            return
+        if payload.get("token") != self._token:
+            return
+        if payload.get("request_id") != self._request_id:
+            return
+        self._request_id = None
+        error = payload.get("error")
+        if error is not None:
+            self._on_error(error)
+            return
+        report = payload.get("report")
+        if not isinstance(report, TrackingReport):
+            self._set_busy(False)
+            return
         self.report = report
         self.report_tree.delete(*self.report_tree.get_children())
         self.rows_by_iid.clear()
@@ -421,14 +482,19 @@ class TrackingView(ttk.Frame):
             if row.include and row.proposed_hours > 0
         ]
         hours = sum(row.proposed_hours for row in included)
-        self.summary_label.configure(
-            text=(
-                f"Строк: {len(report.rows)} · к записи: {len(included)}"
-                f" · часов: {hours:g}"
-            )
+        provenance = (
+            f"{report.destination_kind} · {report.source.value}"
+            f" · {report.start}—{report.end}"
         )
-        for error in report.errors:
-            self.log(f"Ошибка: {error}")
+        summary = (
+            f"{provenance} · Строк: {len(report.rows)}"
+            f" · к записи: {len(included)} · часов: {hours:g}"
+        )
+        if report.errors:
+            summary += f" · ошибки: {'; '.join(report.errors)}"
+        self.summary_label.configure(text=summary)
+        for error_text in report.errors:
+            self.log(f"Ошибка: {error_text}")
         self.log(f"Отчёт готов: строк {len(report.rows)}")
         self._set_busy(False)
 
@@ -477,8 +543,10 @@ class TrackingView(ttk.Frame):
         self.destination_combo.configure(state=readonly)
         self.source_combo.configure(state=readonly)
         self.source_tracker_combo.configure(state=readonly)
+        self.settings_panel.set_busy(busy)
 
     def _on_error(self, exc: object) -> None:
+        self._request_id = None
         message = str(exc) if exc is not None else ""
         if not message and isinstance(exc, BaseException):
             message = exc.__class__.__name__

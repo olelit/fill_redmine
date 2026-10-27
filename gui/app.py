@@ -63,6 +63,8 @@ class MainWindow(tk.Tk):
         )
 
     def show_project(self, project: ProjectConfig) -> None:
+        if project.db_id is not None:
+            project = self.repo.get_project(project.db_id) or project
         self._drop_view()
         self._set_view(
             ProjectView(
@@ -77,6 +79,8 @@ class MainWindow(tk.Tk):
         )
 
     def show_tracking(self, project: ProjectConfig) -> None:
+        if project.db_id is not None:
+            project = self.repo.get_project(project.db_id) or project
         self._drop_view()
         self._set_view(
             TrackingView(
