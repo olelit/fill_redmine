@@ -10,7 +10,4 @@ fill_redmine.db-wal
 fill_redmine.db-shm
 work_assistant.db-wal
 work_assistant.db-shm
-configs/__pycache__/
-dto/__pycache__/
-imports/__pycache__/
 .superpowers/
