@@ -6,7 +6,7 @@ from pathlib import Path
 from configs.ai_settings import AiSettings
 from configs.project_config import ProjectConfig, ProjectUserConfig
 from storage.project_repository import ProjectRepository
-from storage.settings_repository import SettingsRepository
+from storage.settings_repository import KEY as AI_SETTINGS_KEY, SettingsRepository
 from storage.user_repository import UserRepository
 
 DEFAULT_USER_LIST_PATH = Path(__file__).resolve().parent.parent / "user_list.py"
@@ -117,7 +117,7 @@ def migrate_projects_to_v2(
     projects = project_repo.list_projects()
     migrated = 0
     for project in projects:
-        if not project.users:
+        if not project.users and project.db_id is not None:
             project_repo.add_user(
                 project.db_id,
                 ProjectUserConfig(
@@ -128,15 +128,23 @@ def migrate_projects_to_v2(
             )
             migrated += 1
 
-    if settings_repo.get_raw("ai_settings") is None:
-        legacy = next((p.ai for p in projects if p.ai), None)
+    if settings_repo.get_raw(AI_SETTINGS_KEY) is None:
+        legacy = next(
+            (
+                p.ai
+                for p in projects
+                if p.ai.get("api_key") or p.ai.get("model") or p.ai.get("base_url")
+            ),
+            None,
+        )
         if legacy:
+            api_key = str(legacy.get("api_key") or "").strip()
             settings_repo.save_ai_settings(
                 AiSettings(
                     provider="custom",
-                    model=str(legacy.get("model", "")),
-                    base_url=str(legacy.get("base_url", "")),
-                    keys={"custom": str(legacy.get("api_key", ""))},
+                    model=str(legacy.get("model") or "").strip(),
+                    base_url=str(legacy.get("base_url") or "").strip(),
+                    keys={"custom": api_key} if api_key else {},
                 )
             )
 

@@ -12,6 +12,16 @@ def test_defaults(tmp_path):
     assert settings.keys == {}
 
 
+def test_corrupt_json_falls_back_to_defaults(tmp_path):
+    repo = SettingsRepository(db_path=tmp_path / "test.db")
+    repo.set_raw("ai_settings", "not-json")
+
+    settings = repo.get_ai_settings()
+
+    assert settings.provider == "opencode_go"
+    assert settings.model == "deepseek-v4.1-flash"
+
+
 def test_roundtrip(tmp_path):
     repo = SettingsRepository(db_path=tmp_path / "test.db")
     settings = AiSettings(

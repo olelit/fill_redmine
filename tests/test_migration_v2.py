@@ -35,6 +35,22 @@ def test_migrates_legacy_project_to_user_and_ai(tmp_path):
     assert project_repo.get_meta("schema_version") == "2"
 
 
+def test_ai_dict_without_credentials_does_not_override_defaults(tmp_path):
+    db_path = tmp_path / "test.db"
+    project_repo = ProjectRepository(db_path=db_path)
+    settings_repo = SettingsRepository(db_path=db_path)
+    project_repo.add_project(
+        ProjectConfig(name="P", ai={"selected_trackers": ["redmine"]})
+    )
+
+    migrate_projects_to_v2(project_repo, settings_repo, log=lambda message: None)
+
+    settings = settings_repo.get_ai_settings()
+    assert settings.provider == "opencode_go"
+    assert settings.model == "deepseek-v4.1-flash"
+    assert settings.keys == {}
+
+
 def test_migration_is_idempotent(tmp_path):
     db_path = tmp_path / "test.db"
     project_repo = ProjectRepository(db_path=db_path)
