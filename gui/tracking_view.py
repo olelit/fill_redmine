@@ -8,8 +8,9 @@ from tkinter import messagebox, ttk
 from typing import Any
 
 from configs.project_config import ProjectConfig, ProjectUserConfig
-from dto.tracking_dto import TrackingReport, TrackingRow
+from dto.tracking_dto import TrackingReport, TrackingRow, TrackingWriteResult
 from gui.project_settings_panel import ProjectSettingsPanel
+from gui.report_editor import ReportEditor
 from gui.tracking_validation import validate_tracking_request
 from gui.worker import GuiWorker
 from services.tracking_service import TrackingService
@@ -73,6 +74,8 @@ class TrackingView(ttk.Frame):
         self._token = uuid.uuid4().hex
         self._request_seq = 0
         self._request_id: int | None = None
+        self._write_seq = 0
+        self._write_request_id: int | None = None
         self.destination_by_label: dict[str, str] = {}
         self.source_kind_by_label: dict[str, str] = {}
         self.rows_by_iid: dict[str, TrackingRow] = {}
@@ -146,6 +149,8 @@ class TrackingView(ttk.Frame):
             )
         self.report_tree.tag_configure("excluded", foreground="#888")
         self.report_tree.tag_configure("error", foreground="#b00020")
+        self.report_tree.bind("<Double-1>", self._edit_row)
+        self.report_tree.bind("<space>", self._toggle_row)
         tree_scroll = ttk.Scrollbar(
             report_frame, orient="vertical", command=self.report_tree.yview
         )
@@ -159,12 +164,12 @@ class TrackingView(ttk.Frame):
         write_row = ttk.Frame(self)
         write_row.pack(fill="x", pady=4)
         self.write_button = ttk.Button(
-            write_row, text="Затрекать", state="disabled"
+            write_row, text="Затрекать", command=self._write, state="disabled"
         )
         self.write_button.pack(side="left")
         ttk.Label(
             write_row,
-            text="Запись отчёта появится в следующем шаге.",
+            text="Двойной клик — редактировать, Space — включить/исключить.",
             foreground="#777",
         ).pack(side="left", padx=8)
 
@@ -266,6 +271,7 @@ class TrackingView(ttk.Frame):
     def _register_handlers(self) -> None:
         handlers: dict[str, Callable[[Any], None]] = {
             "tracking_report_done": self._on_report_done,
+            "tracking_write_done": self._on_write_done,
             "tracking_error": self._on_error,
             "tracking_log": self.log,
         }
@@ -275,6 +281,7 @@ class TrackingView(ttk.Frame):
 
     def destroy(self) -> None:
         self._request_id = None
+        self._write_request_id = None
         for kind, handler in self._handlers.items():
             self.worker.unregister(kind, handler)
         self._handlers.clear()
@@ -352,7 +359,7 @@ class TrackingView(ttk.Frame):
 
     def _on_back(self) -> None:
         if self._busy and not messagebox.askyesno(
-            "Трекинг", "Генерация выполняется. Выйти?", parent=self
+            "Трекинг", "Выполняется операция. Выйти?", parent=self
         ):
             return
         self.on_back()
@@ -376,11 +383,12 @@ class TrackingView(ttk.Frame):
 
     def _reset_report(self) -> None:
         self._request_id = None
+        self._write_request_id = None
         self.report = None
         self.report_tree.delete(*self.report_tree.get_children())
         self.rows_by_iid.clear()
         self.summary_label.configure(text="")
-        self.write_button.configure(state="disabled")
+        self._sync_write_button()
 
     def _generate(self) -> None:
         if self._busy:
@@ -476,11 +484,63 @@ class TrackingView(ttk.Frame):
         self.rows_by_iid.clear()
         for row in report.rows:
             self._insert_row(row)
-        included = [
+        self._update_summary()
+        for error_text in report.errors:
+            self.log(f"Ошибка: {error_text}")
+        self.log(f"Отчёт готов: строк {len(report.rows)}")
+        self._set_busy(False)
+
+    def _insert_row(self, row: TrackingRow) -> None:
+        self.report_tree.insert(
+            "",
+            "end",
+            iid=row.row_id,
+            values=self._row_values(row),
+            tags=self._row_tags(row),
+        )
+        self.rows_by_iid[row.row_id] = row
+
+    def _refresh_row(self, iid: str, row: TrackingRow) -> None:
+        if not self.report_tree.exists(iid):
+            return
+        self.report_tree.item(
+            iid, values=self._row_values(row), tags=self._row_tags(row)
+        )
+
+    @staticmethod
+    def _row_tags(row: TrackingRow) -> tuple[str, ...]:
+        if row.error:
+            return ("error",)
+        if not row.include:
+            return ("excluded",)
+        return ()
+
+    def _writable_rows(self) -> list[TrackingRow]:
+        if self.report is None:
+            return []
+        return [
             row
-            for row in report.rows
-            if row.include and row.proposed_hours > 0
+            for row in self.report.rows
+            if row.include and row.proposed_hours > 0 and not row.error
         ]
+
+    def _sync_write_button(self) -> None:
+        enabled = (
+            not self._busy
+            and self.report is not None
+            and bool(self._writable_rows())
+        )
+        self.write_button.configure(
+            state="normal" if enabled else "disabled"
+        )
+
+    def _update_summary(self) -> None:
+        report = self.report
+        if report is None:
+            self.summary_label.configure(text="")
+            self._sync_write_button()
+            return
+        included = self._writable_rows()
         hours = sum(row.proposed_hours for row in included)
         provenance = (
             f"{report.destination_kind} · {report.source.value}"
@@ -493,25 +553,130 @@ class TrackingView(ttk.Frame):
         if report.errors:
             summary += f" · ошибки: {'; '.join(report.errors)}"
         self.summary_label.configure(text=summary)
-        for error_text in report.errors:
-            self.log(f"Ошибка: {error_text}")
-        self.log(f"Отчёт готов: строк {len(report.rows)}")
-        self._set_busy(False)
+        self._sync_write_button()
 
-    def _insert_row(self, row: TrackingRow) -> None:
-        tags: tuple[str, ...] = ()
-        if row.error:
-            tags = ("error",)
-        elif not row.include:
-            tags = ("excluded",)
-        self.report_tree.insert(
-            "",
-            "end",
-            iid=row.row_id,
-            values=self._row_values(row),
-            tags=tags,
+    def _edit_row(self, event: tk.Event | None = None) -> None:
+        if self._busy or self.report is None:
+            return
+        selection = self.report_tree.selection()
+        if not selection:
+            return
+        iid = selection[0]
+        row = self.rows_by_iid.get(iid)
+        if row is None:
+            return
+        if row.status == "записано":
+            self.log(f"Строка уже записана: {row.user_name} — {row.date}")
+            return
+        if (
+            event is not None
+            and self.report_tree.identify_column(event.x) == "#1"
+        ):
+            self._toggle_row()
+            return
+        editor = ReportEditor(self, row)
+        self.wait_window(editor)
+        if not editor.result:
+            return
+        if row.status == "ошибка":
+            row.status = ""
+            row.error = ""
+        self._refresh_row(iid, row)
+        self._update_summary()
+
+    def _toggle_row(self, _event: tk.Event | None = None) -> None:
+        if self._busy or self.report is None:
+            return
+        selection = self.report_tree.selection()
+        if not selection:
+            return
+        iid = selection[0]
+        row = self.rows_by_iid.get(iid)
+        if row is None:
+            return
+        if row.status == "записано":
+            self.log(f"Строка уже записана: {row.user_name} — {row.date}")
+            return
+        row.include = not row.include
+        self._refresh_row(iid, row)
+        self._update_summary()
+
+    def _write(self) -> None:
+        if self._busy or self.report is None:
+            return
+        selected = self._writable_rows()
+        if not selected:
+            messagebox.showinfo(
+                "Work Assistant", "Нет строк для записи", parent=self
+            )
+            return
+        total = sum(row.proposed_hours for row in selected)
+        if not messagebox.askyesno(
+            "Work Assistant",
+            f"Записать {len(selected)} строк ({total:g} ч)?",
+            parent=self,
+        ):
+            return
+        report = self.report
+        project = copy.deepcopy(self.project)
+        self._write_seq += 1
+        wid = self._write_seq
+        token = self._token
+        self._write_request_id = wid
+        self.log(f"Записываю отчёт: строк {len(selected)}, часов {total:g}")
+        self._set_busy(True)
+
+        def run() -> dict[str, Any]:
+            try:
+                result = self.service.write_report(project, report)
+                return {"token": token, "request_id": wid, "result": result}
+            except Exception as exc:
+                return {"token": token, "request_id": wid, "error": exc}
+
+        self.worker.submit(
+            run,
+            done_kind="tracking_write_done",
+            error_kind="tracking_error",
         )
-        self.rows_by_iid[row.row_id] = row
+
+    def _on_write_done(self, payload: object) -> None:
+        if not isinstance(payload, dict):
+            return
+        if payload.get("token") != self._token:
+            return
+        if payload.get("request_id") != self._write_request_id:
+            return
+        self._write_request_id = None
+        error = payload.get("error")
+        if error is not None:
+            self._on_error(error)
+            return
+        result = payload.get("result")
+        if not isinstance(result, TrackingWriteResult):
+            self._set_busy(False)
+            return
+        for iid, row in self.rows_by_iid.items():
+            self._refresh_row(iid, row)
+        written = result.written
+        failed = len(result.errors)
+        self.log(f"Запись завершена: записано {written}, ошибок {failed}")
+        for user_name, date_text, message in result.errors:
+            where = " ".join(part for part in (user_name, date_text) if part)
+            self.log(f"Ошибка записи: {where} — {message}")
+        self._set_busy(False)
+        self._update_summary()
+        if failed:
+            messagebox.showwarning(
+                "Work Assistant",
+                f"Записано: {written}. Ошибок: {failed}. Подробности в логе.",
+                parent=self,
+            )
+        else:
+            messagebox.showinfo(
+                "Work Assistant",
+                f"Записано строк: {written}.",
+                parent=self,
+            )
 
     @staticmethod
     def _row_values(row: TrackingRow) -> tuple[str, ...]:
@@ -544,9 +709,11 @@ class TrackingView(ttk.Frame):
         self.source_combo.configure(state=readonly)
         self.source_tracker_combo.configure(state=readonly)
         self.settings_panel.set_busy(busy)
+        self._sync_write_button()
 
     def _on_error(self, exc: object) -> None:
         self._request_id = None
+        self._write_request_id = None
         message = str(exc) if exc is not None else ""
         if not message and isinstance(exc, BaseException):
             message = exc.__class__.__name__
