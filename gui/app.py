@@ -5,6 +5,7 @@ from configs.project_config import ProjectConfig
 from gui.ai_settings_dialog import AiSettingsDialog
 from gui.project_list_view import ProjectListView
 from gui.project_view import ProjectView
+from gui.tracking_view import TrackingView
 from gui.worker import GuiWorker
 from storage.project_repository import ProjectRepository
 from storage.settings_repository import SettingsRepository
@@ -76,7 +77,17 @@ class MainWindow(tk.Tk):
         )
 
     def show_tracking(self, project: ProjectConfig) -> None:
-        self.status.set("трекинг времени — в следующем шаге")
+        self._drop_view()
+        self._set_view(
+            TrackingView(
+                self.container,
+                project,
+                self.repo,
+                self.settings_repo,
+                self.worker,
+                on_back=lambda: self.show_project(project),
+            )
+        )
 
     def show_ai_settings(self) -> None:
         dialog = AiSettingsDialog(self, self.settings_repo, self.worker)
