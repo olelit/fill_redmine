@@ -550,6 +550,13 @@ class TrackingView(ttk.Frame):
             f"{provenance} · Строк: {len(report.rows)}"
             f" · к записи: {len(included)} · часов: {hours:g}"
         )
+        failed = sum(
+            1
+            for row in report.rows
+            if row.error and row.status != "записано"
+        )
+        if failed:
+            summary += f" · ошибок: {failed}"
         if report.errors:
             summary += f" · ошибки: {'; '.join(report.errors)}"
         self.summary_label.configure(text=summary)
@@ -558,21 +565,28 @@ class TrackingView(ttk.Frame):
     def _edit_row(self, event: tk.Event | None = None) -> None:
         if self._busy or self.report is None:
             return
-        selection = self.report_tree.selection()
-        if not selection:
-            return
-        iid = selection[0]
+        if event is not None:
+            region = self.report_tree.identify_region(event.x, event.y)
+            if region != "cell":
+                return
+            iid = self.report_tree.identify_row(event.y)
+            if not iid:
+                return
+            self.report_tree.selection_set(iid)
+            self.report_tree.focus(iid)
+            if self.report_tree.identify_column(event.x) == "#1":
+                self._toggle_row()
+                return
+        else:
+            selection = self.report_tree.selection()
+            if not selection:
+                return
+            iid = selection[0]
         row = self.rows_by_iid.get(iid)
         if row is None:
             return
         if row.status == "записано":
             self.log(f"Строка уже записана: {row.user_name} — {row.date}")
-            return
-        if (
-            event is not None
-            and self.report_tree.identify_column(event.x) == "#1"
-        ):
-            self._toggle_row()
             return
         editor = ReportEditor(self, row)
         self.wait_window(editor)
