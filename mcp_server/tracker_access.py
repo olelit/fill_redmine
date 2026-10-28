@@ -40,8 +40,13 @@ def build_user_tracker(
         )
 
     for key in ("user_id", "activity_id") if kind == "redmine" else ():
+        raw_value = config[key]
+        if type(raw_value) is not int and not isinstance(raw_value, str):
+            raise ProfileConfigError(
+                f"{tracker_class.label} configuration is invalid: {key}"
+            )
         try:
-            value = int(config[key])
+            value = int(raw_value)
         except (TypeError, ValueError):
             raise ProfileConfigError(
                 f"{tracker_class.label} configuration is invalid: {key}"

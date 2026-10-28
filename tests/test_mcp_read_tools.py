@@ -146,6 +146,61 @@ def test_read_tools_reject_disabled_profiles(tmp_path):
     assert "enabled" in str(result.content).lower()
 
 
+@pytest.mark.parametrize("field", ["user_id", "activity_id"])
+@pytest.mark.parametrize("value", [17.9, True])
+def test_redmine_adapter_rejects_non_integer_ids_without_exposing_values(field, value):
+    profile = UserProfile(
+        name="Oleg",
+        is_enable=True,
+        redmine={"api_key": "secret", "user_id": 17, "activity_id": 9, field: value},
+    )
+
+    with pytest.raises(ProfileConfigError) as exc_info:
+        build_user_tracker(profile, "redmine")
+
+    assert str(value) not in str(exc_info.value)
+
+
+@pytest.mark.parametrize("value", [17, "17"])
+def test_redmine_adapter_accepts_positive_integer_ids(value):
+    profile = UserProfile(
+        name="Oleg",
+        is_enable=True,
+        redmine={"api_key": "secret", "user_id": value, "activity_id": value},
+    )
+
+    tracker = build_user_tracker(profile, "redmine")
+
+    assert tracker.config["user_id"] == value
+    assert tracker.config["activity_id"] == value
+
+
+def test_git_tool_returns_generic_error_for_invalid_repository_path(tmp_path):
+    path = tmp_path / "users.json"
+    _write_users(
+        path,
+        [{"name": "Oleg", "is_enable": True, "git_email": "oleg@example.com"}],
+    )
+    invalid_repo_path = str(tmp_path / "missing-repo")
+
+    result = _call_tool(
+        create_server(path),
+        "get_git_commits",
+        {
+            "user_name": "Oleg",
+            "repo_path": invalid_repo_path,
+            "start": "2026-10-20",
+            "end": "2026-10-20",
+        },
+    )
+
+    assert result.is_error is True
+    error = str(result.content)
+    assert "Git commit read failed" in error
+    assert invalid_repo_path not in error
+    assert "oleg@example.com" not in error
+
+
 def test_git_tool_returns_commit_metadata_without_profile_credentials(tmp_path, monkeypatch):
     path = tmp_path / "users.json"
     _write_users(

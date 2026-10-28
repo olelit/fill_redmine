@@ -1,7 +1,7 @@
 from datetime import date
 from pathlib import Path
 
-from clients.git_client import GitClient
+from clients.git_client import GitClient, GitError
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
@@ -37,6 +37,8 @@ def register_read_tools(server: MCPServer, users_path: Path) -> None:
     def git_commits(user_name: str, repo_path: str, start: str, end: str):
         try:
             return _get_git_commits(users_path, user_name, repo_path, start, end)
+        except GitError:
+            raise ToolError("Git commit read failed") from None
         except (ProfileConfigError, ValueError) as exc:
             raise ToolError(str(exc)) from None
 
