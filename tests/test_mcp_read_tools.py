@@ -284,7 +284,7 @@ def test_tracker_adapter_rejects_blank_required_fields_without_exposing_credenti
     assert "hidden-token" not in str(exc_info.value)
 
 
-def test_server_registers_exactly_the_three_task_tools(tmp_path):
+def test_server_registers_read_tools_and_write_gate(tmp_path):
     path = tmp_path / "users.json"
     _write_users(path, [{"name": "Oleg", "is_enable": True}])
 
@@ -298,5 +298,6 @@ def test_server_registers_exactly_the_three_task_tools(tmp_path):
         "list_enabled_users",
         "get_worklogs",
         "get_git_commits",
+        "write_plan",
     ]
     assert "users_path" not in str(tools.tools)

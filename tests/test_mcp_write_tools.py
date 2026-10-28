@@ -1,0 +1,328 @@
+import asyncio
+import json
+from pathlib import Path
+
+import pytest
+from mcp import types
+from mcp.client import Client
+
+from mcp_server.app import create_server
+from mcp_server.config import ProfileConfigError
+from mcp_server.plans import PLAN_TTL_SECONDS, PlanError, PlanStore, PlannedEntry
+from mcp_server.writer import execute_plan
+
+
+def _entry(**changes):
+    values = {
+        "date": "2026-10-20",
+        "hours": 1.5,
+        "comment": "Review changes",
+        "commit_hashes": ("abc123",),
+    }
+    values.update(changes)
+    return PlannedEntry(**values)
+
+
+def _write_users(path: Path, users: list[dict[str, object]]) -> None:
+    path.write_text(json.dumps({"users": users}), encoding="utf-8")
+
+
+def _tool_data(result):
+    assert result.is_error is False
+    return [json.loads(item.text) for item in result.content]
+
+
+def test_plan_store_claims_once_and_rejects_unknown_ids():
+    store = PlanStore()
+    plan = store.create("Oleg", "redmine", "42", (_entry(),), ())
+
+    assert store.claim(plan.plan_id) == plan
+    with pytest.raises(PlanError):
+        store.claim(plan.plan_id)
+    with pytest.raises(PlanError):
+        store.claim("unknown")
+
+
+def test_plan_store_rejects_expired_plans_and_rechecks_freshness(monkeypatch):
+    now = [100.0]
+    monkeypatch.setattr("mcp_server.plans.time.monotonic", lambda: now[0])
+    store = PlanStore()
+    expired = store.create("Oleg", "redmine", "42", (_entry(),), ())
+    now[0] += PLAN_TTL_SECONDS
+
+    with pytest.raises(PlanError):
+        store.claim(expired.plan_id)
+
+    fresh = store.create("Oleg", "redmine", "42", (_entry(),), ())
+    claimed = store.claim(fresh.plan_id)
+    now[0] += PLAN_TTL_SECONDS
+    with pytest.raises(PlanError):
+        store.validate_fresh(claimed)
+
+
+@pytest.mark.parametrize(
+    ("action", "approved", "with_capability", "expected_calls"),
+    [
+        ("accept", True, True, 1),
+        ("accept", False, True, 0),
+        ("decline", None, True, 0),
+        ("cancel", None, True, 0),
+        ("accept", True, False, 0),
+    ],
+)
+def test_write_tool_only_executes_explicit_approval(
+    action, approved, with_capability, expected_calls
+):
+    store = PlanStore()
+    plan = store.create("Oleg", "redmine", "42", (_entry(),), ())
+    executed = []
+
+    def execute(claimed):
+        executed.append(claimed)
+        return {"results": []}
+
+    server = create_server(write_store=store, write_executor=execute)
+
+    async def elicitation_callback(context, params):
+        if action == "accept":
+            return types.ElicitResult(action=action, content={"approved": approved})
+        return types.ElicitResult(action=action)
+
+    async def call():
+        async with Client(
+            server,
+            mode="legacy",
+            elicitation_callback=elicitation_callback if with_capability else None,
+        ) as client:
+            return await client.call_tool("write_plan", {"plan_id": plan.plan_id})
+
+    result = asyncio.run(call())
+
+    assert len(executed) == expected_calls
+    assert result.is_error is False
+    if expected_calls:
+        assert _tool_data(result) == [{"results": []}]
+    else:
+        assert "blocked" in json.dumps(_tool_data(result)).lower()
+
+
+def test_write_tool_asks_with_plan_rows_and_no_credentials(tmp_path):
+    path = tmp_path / "users.json"
+    _write_users(
+        path,
+        [{"name": "Oleg", "is_enable": True, "youtrack": {
+            "access_token": "private-token", "issue_id": "APP-42"
+        }}],
+    )
+    store = PlanStore()
+    plan = store.create("Oleg", "youtrack", "APP-42", (_entry(),), ())
+    messages = []
+
+    async def elicitation_callback(context, params):
+        messages.append(params.message)
+        assert params.requested_schema["properties"] == {"approved": {"type": "boolean"}}
+        assert params.requested_schema["required"] == ["approved"]
+        return types.ElicitResult(action="decline")
+
+    async def call():
+        async with Client(
+            create_server(path, write_store=store, write_executor=lambda _plan: {}),
+            mode="legacy",
+            elicitation_callback=elicitation_callback,
+        ) as client:
+            return await client.call_tool("write_plan", {"plan_id": plan.plan_id})
+
+    asyncio.run(call())
+
+    assert len(messages) == 1
+    for expected in ("Oleg", "youtrack", "APP-42", "2026-10-20", "1.5", "Review changes"):
+        assert expected in messages[0]
+    assert "private-token" not in messages[0]
+
+
+def test_write_tool_rechecks_freshness_after_approval(monkeypatch):
+    now = [1.0]
+    monkeypatch.setattr("mcp_server.plans.time.monotonic", lambda: now[0])
+    store = PlanStore()
+    plan = store.create("Oleg", "redmine", "42", (_entry(),), ())
+    executed = []
+
+    async def elicitation_callback(context, params):
+        now[0] += PLAN_TTL_SECONDS
+        return types.ElicitResult(action="accept", content={"approved": True})
+
+    async def call():
+        async with Client(
+            create_server(write_store=store, write_executor=lambda plan: executed.append(plan)),
+            mode="legacy",
+            elicitation_callback=elicitation_callback,
+        ) as client:
+            return await client.call_tool("write_plan", {"plan_id": plan.plan_id})
+
+    result = asyncio.run(call())
+
+    assert executed == []
+    assert "blocked" in json.dumps(_tool_data(result)).lower()
+
+
+def test_write_tool_rejects_unknown_and_replayed_plans_without_execution():
+    store = PlanStore()
+    plan = store.create("Oleg", "redmine", "42", (_entry(),), ())
+    executed = []
+
+    async def elicitation_callback(context, params):
+        return types.ElicitResult(action="accept", content={"approved": True})
+
+    async def call(plan_id):
+        async with Client(
+            create_server(
+                write_store=store,
+                write_executor=lambda value: (executed.append(value) or {}),
+            ),
+            mode="legacy",
+            elicitation_callback=elicitation_callback,
+        ) as client:
+            return await client.call_tool("write_plan", {"plan_id": plan_id})
+
+    first = asyncio.run(call(plan.plan_id))
+    replay = asyncio.run(call(plan.plan_id))
+    unknown = asyncio.run(call("unknown"))
+
+    assert len(executed) == 1
+    assert first.is_error is False
+    assert replay.is_error is False
+    assert unknown.is_error is False
+    assert "blocked" in json.dumps(_tool_data(replay)).lower()
+    assert "blocked" in json.dumps(_tool_data(unknown)).lower()
+
+
+def test_write_tool_does_not_convert_executor_errors_into_approval_results():
+    store = PlanStore()
+    plan = store.create("Oleg", "redmine", "42", (_entry(),), ())
+
+    def fail_write(_plan):
+        raise RuntimeError("tracker write failed")
+
+    async def elicitation_callback(context, params):
+        return types.ElicitResult(action="accept", content={"approved": True})
+
+    async def call():
+        async with Client(
+            create_server(
+                write_store=store,
+                write_executor=fail_write,
+            ),
+            mode="legacy",
+            elicitation_callback=elicitation_callback,
+        ) as client:
+            return await client.call_tool("write_plan", {"plan_id": plan.plan_id})
+
+    result = asyncio.run(call())
+
+    assert result.is_error is True
+    assert "blocked" not in result.content[0].text.lower()
+
+
+def test_writer_reloads_enabled_profile_and_injects_redmine_issue(tmp_path, monkeypatch):
+    path = tmp_path / "users.json"
+    _write_users(path, [{"name": "Oleg", "is_enable": True, "redmine": {
+        "api_key": "old-secret", "user_id": 17, "activity_id": 9
+    }}])
+    store = PlanStore()
+    plan = store.create("Oleg", "redmine", "42", (_entry(),), ())
+    _write_users(path, [{"name": "Oleg", "is_enable": True, "redmine": {
+        "api_key": "current-secret", "user_id": 17, "activity_id": 9
+    }}])
+    calls = []
+
+    class FakeTracker:
+        def create_worklogs(self, records):
+            calls.append((records, self.config["issue_id"]))
+            return []
+
+    def build(profile, kind, *, issue_id=None, for_write=False):
+        tracker = FakeTracker()
+        tracker.config = {"issue_id": issue_id}
+        calls.append((profile.redmine["api_key"], kind, for_write))
+        return tracker
+
+    monkeypatch.setattr("mcp_server.writer.build_user_tracker", build)
+
+    result = execute_plan(plan, path)
+
+    assert calls[0] == ("current-secret", "redmine", True)
+    records, issue_id = calls[1]
+    assert issue_id == 42
+    assert [(record.date, record.hours, record.description) for record in records] == [
+        ("2026-10-20", 1.5, "Review changes")
+    ]
+    assert result == {"results": [{"date": "2026-10-20", "status": "created"}]}
+    assert "current-secret" not in json.dumps(result)
+
+
+def test_writer_refuses_disabled_profile_without_writing(tmp_path, monkeypatch):
+    path = tmp_path / "users.json"
+    _write_users(path, [{"name": "Oleg", "is_enable": False, "redmine": {
+        "api_key": "secret", "user_id": 17, "activity_id": 9
+    }}])
+    plan = PlanStore().create("Oleg", "redmine", "42", (_entry(),), ())
+    writes = []
+    monkeypatch.setattr(
+        "mcp_server.writer.build_user_tracker",
+        lambda *args, **kwargs: writes.append(True),
+    )
+
+    with pytest.raises(ProfileConfigError):
+        execute_plan(plan, path)
+
+    assert writes == []
+
+
+def test_writer_verifies_current_youtrack_issue_and_returns_safe_row_statuses(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "users.json"
+    _write_users(path, [{"name": "Oleg", "is_enable": True, "youtrack": {
+        "access_token": "youtrack-secret", "issue_id": "APP-42"
+    }}])
+    plan = PlanStore().create(
+        "Oleg", "youtrack", "APP-42", (_entry(), _entry(date="2026-10-21")), ()
+    )
+    calls = []
+
+    class FakeTracker:
+        def create_worklogs(self, records):
+            calls.append(records)
+            return [("2026-10-21", "secret server response")]
+
+    monkeypatch.setattr("mcp_server.writer.build_user_tracker", lambda *a, **k: FakeTracker())
+
+    result = execute_plan(plan, path)
+
+    assert len(calls) == 1
+    assert result == {
+        "results": [
+            {"date": "2026-10-20", "status": "created"},
+            {"date": "2026-10-21", "status": "failed"},
+        ]
+    }
+    assert "youtrack-secret" not in json.dumps(result)
+    assert "secret server response" not in json.dumps(result)
+
+
+def test_writer_refuses_changed_youtrack_issue_without_writing(tmp_path, monkeypatch):
+    path = tmp_path / "users.json"
+    _write_users(path, [{"name": "Oleg", "is_enable": True, "youtrack": {
+        "access_token": "secret", "issue_id": "APP-NEW"
+    }}])
+    plan = PlanStore().create("Oleg", "youtrack", "APP-OLD", (_entry(),), ())
+    writes = []
+    monkeypatch.setattr(
+        "mcp_server.writer.build_user_tracker",
+        lambda *args, **kwargs: writes.append(True),
+    )
+
+    with pytest.raises(ProfileConfigError):
+        execute_plan(plan, path)
+
+    assert writes == []
