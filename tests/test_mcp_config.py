@@ -74,6 +74,16 @@ def test_select_user_rejects_disabled_profile_name(tmp_path):
         select_user(load_users(path), "b")
 
 
+def test_select_user_rejects_duplicate_enabled_profile_name(tmp_path):
+    path = _write_config(
+        tmp_path,
+        {"users": [_enabled_profile("dup"), _enabled_profile("dup")]},
+    )
+
+    with pytest.raises(ProfileConfigError):
+        select_user(load_users(path), "dup")
+
+
 def test_select_user_rejects_unknown_profile_name(tmp_path):
     path = _write_config(tmp_path, {"users": [_enabled_profile("a")]})
 

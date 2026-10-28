@@ -86,10 +86,12 @@ def select_user(users: list[UserProfile], name: str | None = None) -> UserProfil
     enabled = [user for user in users if user.is_enable]
 
     if name is not None:
-        for user in enabled:
-            if user.name == name:
-                return user
-        raise ProfileConfigError(f"No enabled user profile named {name!r}")
+        matches = [user for user in enabled if user.name == name]
+        if len(matches) == 1:
+            return matches[0]
+        if not matches:
+            raise ProfileConfigError(f"No enabled user profile named {name!r}")
+        raise ProfileConfigError(f"Multiple enabled user profiles named {name!r}")
 
     if not enabled:
         raise ProfileConfigError("No enabled user profiles are configured")
