@@ -73,7 +73,7 @@ def test_list_enabled_users_never_returns_profile_secrets(tmp_path, monkeypatch)
         assert private_value not in result
 
 
-def test_server_exposes_only_enabled_user_tool_without_prompts_or_resources(tmp_path):
+def test_server_exposes_task_tools_without_prompts_or_resources(tmp_path):
     path = tmp_path / "users.json"
     _write_users(path, [{"name": "Oleg", "is_enable": True}])
     server = create_server(path)
@@ -87,7 +87,11 @@ def test_server_exposes_only_enabled_user_tool_without_prompts_or_resources(tmp_
 
     tools, prompts, resources = asyncio.run(inspect_server())
 
-    assert [tool.name for tool in tools.tools] == ["list_enabled_users"]
+    assert [tool.name for tool in tools.tools] == [
+        "list_enabled_users",
+        "get_worklogs",
+        "get_git_commits",
+    ]
     assert prompts.prompts == []
     assert resources.resources == []
 
