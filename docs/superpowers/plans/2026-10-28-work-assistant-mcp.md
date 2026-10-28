@@ -144,6 +144,7 @@ Expected: PASS. Commit as `feat: load MCP users from ignored JSON`.
 - Create: `mcp_server/__main__.py`
 - Create: `mcp_server/user_tools.py`
 - Create: `.opencode/opencode.json`
+- Create: `pytest.ini`
 - Create: `tests/test_mcp_server.py`
 - Modify: `requirements.txt`
 
@@ -164,6 +165,8 @@ Expected: FAIL because the MCP package/server modules are not installed or creat
 - [ ] **Step 3: Add the SDK and implement the server shell**
 
 Add `mcp>=2.3,<3` to `requirements.txt`. Register `list_enabled_users` on `MCPServer("Work Assistant")`. Load profiles inside the tool call so a missing config yields a safe tool error rather than printing secrets during process startup. Use logging on stderr; do not print to stdout.
+
+Add `pytest.ini` with `addopts = -p no:anyio`: this project uses `asyncio.run` for in-memory MCP tests and does not use AnyIO's pytest plugin; avoiding its auto-load prevents a third-party `CallSpec2` deprecation warning.
 
 ```python
 from mcp.server import MCPServer
