@@ -148,6 +148,18 @@ def test_load_users_rejects_malformed_json(tmp_path):
         load_users(path)
 
 
+def test_load_users_rejects_invalid_utf8_without_leaking_content(tmp_path):
+    path = tmp_path / "users.json"
+    path.write_bytes(b'{"users": [{"name": "FAKE_SECRET_TOKEN_\xff"}]}')
+
+    with pytest.raises(ProfileConfigError) as exc_info:
+        load_users(path)
+
+    message = str(exc_info.value)
+    assert "FAKE_SECRET_TOKEN" not in message
+    assert '{"users"' not in message
+
+
 def test_load_users_rejects_non_list_users(tmp_path):
     path = _write_config(tmp_path, {"users": {}})
 

@@ -30,12 +30,14 @@ def load_users(path: Path | None = None) -> list[UserProfile]:
         text = config_path.read_text(encoding="utf-8")
     except FileNotFoundError:
         raise ProfileConfigError(f"Users config file not found: {config_path}") from None
+    except UnicodeDecodeError:
+        raise ProfileConfigError(f"Users config file is not valid UTF-8: {config_path}") from None
     except OSError:
         raise ProfileConfigError(f"Cannot read users config file: {config_path}") from None
 
     try:
         raw = json.loads(text)
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except json.JSONDecodeError:
         raise ProfileConfigError(f"Users config file is not valid JSON: {config_path}") from None
 
     if not isinstance(raw, dict):
