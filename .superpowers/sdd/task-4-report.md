@@ -47,3 +47,46 @@
 
 - No outstanding concerns. GUI/manual testing was not performed; write behavior was tested with
   injected fakes through the in-memory MCP client, with no live network writes.
+
+## Reviewer fixes
+
+### RED/GREEN cycles
+
+1. **Changed destination profile refusal**
+   - RED: `/tmp/opencode/work-assistant-mcp-venv/bin/python -m pytest
+     tests/test_mcp_write_tools.py -q -k 'duplicate_entry_dates or changed_target_config'` — the
+     target-change case proceeded into `build_user_tracker` and errored when its stub returned
+     `None`, demonstrating the missing pre-call refusal.
+   - GREEN: `/tmp/opencode/work-assistant-mcp-venv/bin/python -m pytest
+     tests/test_mcp_write_tools.py -q -k changed_target_config` — `1 passed, 17 deselected`.
+   - Added SHA-256 over compact, sorted JSON of only the destination block. The plan field is
+     excluded from repr; `execute_plan` recomputes after profile reload and rejects mismatch before
+     constructing a tracker. A test also verifies key-order stability, target-only scope, and repr
+     exclusion.
+2. **Duplicate entry-date rejection**
+   - RED: same RED command — `test_plan_store_rejects_duplicate_entry_dates` failed because duplicate
+     dates did not raise `ValueError`.
+   - GREEN: `/tmp/opencode/work-assistant-mcp-venv/bin/python -m pytest
+     tests/test_mcp_write_tools.py -q -k duplicate_entry_dates` — `1 passed, 17 deselected`.
+   - `PlanStore.create` now checks date uniqueness before storing the plan.
+
+### Verification
+
+- Focused: `/tmp/opencode/work-assistant-mcp-venv/bin/python -m pytest
+  tests/test_mcp_write_tools.py -q` — `18 passed`; no warnings.
+- Full: `/tmp/opencode/work-assistant-mcp-venv/bin/python -m pytest -q` — `274 passed`; no warnings.
+- `git diff --check` — no output.
+
+### Files and self-review
+
+- `mcp_server/plans.py`: fingerprint field hidden from repr, canonical target-block fingerprint,
+  duplicate-date validation; existing one-use and 600-second expiry behavior unchanged.
+- `mcp_server/writer.py`: fresh enabled-profile fingerprint comparison before any tracker
+  construction/call; no raw credentials are copied into plans.
+- `tests/test_mcp_write_tools.py`: RED cases, target-only/canonical fingerprint coverage, and updated
+  plan fixtures.
+- `.superpowers/sdd/task-4-report.md`: this reviewer-fix record.
+- No fingerprint is included in tool results, elicitation text, repr, or logging. Tracker writes
+  remain behind the existing approval gate; results still expose only per-row status.
+- Commit: `fix: bind MCP write plans to target profiles`.
+- Self-review found no outstanding concerns. No GUI or live tracker requests were run.

@@ -2,7 +2,7 @@ from pathlib import Path
 
 from dto.worklog_dto import WorklogDTO
 from mcp_server.config import ProfileConfigError, load_users, select_user
-from mcp_server.plans import WritePlan
+from mcp_server.plans import WritePlan, fingerprint_target_config
 from mcp_server.tracker_access import build_user_tracker
 
 
@@ -11,6 +11,8 @@ def execute_plan(plan: WritePlan, users_path: Path) -> dict[str, object]:
         raise ProfileConfigError("Unsupported tracker kind")
 
     profile = select_user(load_users(users_path), plan.user_name)
+    if fingerprint_target_config(profile, plan.destination_kind) != plan.target_fingerprint:
+        raise ProfileConfigError("Destination tracker configuration changed since plan creation")
     if plan.destination_kind == "redmine":
         issue_id = _redmine_issue_id(plan.issue_id)
         tracker = build_user_tracker(

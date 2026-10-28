@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 from pathlib import Path
 
@@ -7,8 +8,14 @@ from mcp import types
 from mcp.client import Client
 
 from mcp_server.app import create_server
-from mcp_server.config import ProfileConfigError
-from mcp_server.plans import PLAN_TTL_SECONDS, PlanError, PlanStore, PlannedEntry
+from mcp_server.config import ProfileConfigError, UserProfile
+from mcp_server.plans import (
+    PLAN_TTL_SECONDS,
+    PlanError,
+    PlanStore,
+    PlannedEntry,
+    fingerprint_target_config,
+)
 from mcp_server.writer import execute_plan
 
 
@@ -27,6 +34,15 @@ def _write_users(path: Path, users: list[dict[str, object]]) -> None:
     path.write_text(json.dumps({"users": users}), encoding="utf-8")
 
 
+def _create_plan(store, user_name, kind, issue_id, entries, warnings, fingerprint="test"):
+    return store.create(user_name, kind, issue_id, entries, warnings, fingerprint)
+
+
+def _fingerprint(kind, config):
+    profile = UserProfile(name="Oleg", is_enable=True, **{kind: config})
+    return fingerprint_target_config(profile, kind)
+
+
 def _tool_data(result):
     assert result.is_error is False
     return [json.loads(item.text) for item in result.content]
@@ -34,7 +50,7 @@ def _tool_data(result):
 
 def test_plan_store_claims_once_and_rejects_unknown_ids():
     store = PlanStore()
-    plan = store.create("Oleg", "redmine", "42", (_entry(),), ())
+    plan = _create_plan(store, "Oleg", "redmine", "42", (_entry(),), ())
 
     assert store.claim(plan.plan_id) == plan
     with pytest.raises(PlanError):
@@ -47,13 +63,13 @@ def test_plan_store_rejects_expired_plans_and_rechecks_freshness(monkeypatch):
     now = [100.0]
     monkeypatch.setattr("mcp_server.plans.time.monotonic", lambda: now[0])
     store = PlanStore()
-    expired = store.create("Oleg", "redmine", "42", (_entry(),), ())
+    expired = _create_plan(store, "Oleg", "redmine", "42", (_entry(),), ())
     now[0] += PLAN_TTL_SECONDS
 
     with pytest.raises(PlanError):
         store.claim(expired.plan_id)
 
-    fresh = store.create("Oleg", "redmine", "42", (_entry(),), ())
+    fresh = _create_plan(store, "Oleg", "redmine", "42", (_entry(),), ())
     claimed = store.claim(fresh.plan_id)
     now[0] += PLAN_TTL_SECONDS
     with pytest.raises(PlanError):
@@ -74,7 +90,7 @@ def test_write_tool_only_executes_explicit_approval(
     action, approved, with_capability, expected_calls
 ):
     store = PlanStore()
-    plan = store.create("Oleg", "redmine", "42", (_entry(),), ())
+    plan = _create_plan(store, "Oleg", "redmine", "42", (_entry(),), ())
     executed = []
 
     def execute(claimed):
@@ -115,7 +131,7 @@ def test_write_tool_asks_with_plan_rows_and_no_credentials(tmp_path):
         }}],
     )
     store = PlanStore()
-    plan = store.create("Oleg", "youtrack", "APP-42", (_entry(),), ())
+    plan = _create_plan(store, "Oleg", "youtrack", "APP-42", (_entry(),), ())
     messages = []
 
     async def elicitation_callback(context, params):
@@ -144,7 +160,7 @@ def test_write_tool_rechecks_freshness_after_approval(monkeypatch):
     now = [1.0]
     monkeypatch.setattr("mcp_server.plans.time.monotonic", lambda: now[0])
     store = PlanStore()
-    plan = store.create("Oleg", "redmine", "42", (_entry(),), ())
+    plan = _create_plan(store, "Oleg", "redmine", "42", (_entry(),), ())
     executed = []
 
     async def elicitation_callback(context, params):
@@ -167,7 +183,7 @@ def test_write_tool_rechecks_freshness_after_approval(monkeypatch):
 
 def test_write_tool_rejects_unknown_and_replayed_plans_without_execution():
     store = PlanStore()
-    plan = store.create("Oleg", "redmine", "42", (_entry(),), ())
+    plan = _create_plan(store, "Oleg", "redmine", "42", (_entry(),), ())
     executed = []
 
     async def elicitation_callback(context, params):
@@ -198,7 +214,7 @@ def test_write_tool_rejects_unknown_and_replayed_plans_without_execution():
 
 def test_write_tool_does_not_convert_executor_errors_into_approval_results():
     store = PlanStore()
-    plan = store.create("Oleg", "redmine", "42", (_entry(),), ())
+    plan = _create_plan(store, "Oleg", "redmine", "42", (_entry(),), ())
 
     def fail_write(_plan):
         raise RuntimeError("tracker write failed")
@@ -225,14 +241,27 @@ def test_write_tool_does_not_convert_executor_errors_into_approval_results():
 
 def test_writer_reloads_enabled_profile_and_injects_redmine_issue(tmp_path, monkeypatch):
     path = tmp_path / "users.json"
-    _write_users(path, [{"name": "Oleg", "is_enable": True, "redmine": {
-        "api_key": "old-secret", "user_id": 17, "activity_id": 9
-    }}])
+    config = {"api_key": "current-secret", "user_id": 17, "activity_id": 9}
+    _write_users(
+        path,
+        [{"name": "Oleg", "git_email": "old@example.com", "is_enable": True,
+          "redmine": config}],
+    )
     store = PlanStore()
-    plan = store.create("Oleg", "redmine", "42", (_entry(),), ())
-    _write_users(path, [{"name": "Oleg", "is_enable": True, "redmine": {
-        "api_key": "current-secret", "user_id": 17, "activity_id": 9
-    }}])
+    plan = _create_plan(
+        store,
+        "Oleg",
+        "redmine",
+        "42",
+        (_entry(),),
+        (),
+        _fingerprint("redmine", config),
+    )
+    _write_users(
+        path,
+        [{"name": "Oleg", "git_email": "current@example.com", "is_enable": True,
+          "redmine": config}],
+    )
     calls = []
 
     class FakeTracker:
@@ -243,14 +272,14 @@ def test_writer_reloads_enabled_profile_and_injects_redmine_issue(tmp_path, monk
     def build(profile, kind, *, issue_id=None, for_write=False):
         tracker = FakeTracker()
         tracker.config = {"issue_id": issue_id}
-        calls.append((profile.redmine["api_key"], kind, for_write))
+        calls.append((profile.redmine["api_key"], profile.git_email, kind, for_write))
         return tracker
 
     monkeypatch.setattr("mcp_server.writer.build_user_tracker", build)
 
     result = execute_plan(plan, path)
 
-    assert calls[0] == ("current-secret", "redmine", True)
+    assert calls[0] == ("current-secret", "current@example.com", "redmine", True)
     records, issue_id = calls[1]
     assert issue_id == 42
     assert [(record.date, record.hours, record.description) for record in records] == [
@@ -265,7 +294,7 @@ def test_writer_refuses_disabled_profile_without_writing(tmp_path, monkeypatch):
     _write_users(path, [{"name": "Oleg", "is_enable": False, "redmine": {
         "api_key": "secret", "user_id": 17, "activity_id": 9
     }}])
-    plan = PlanStore().create("Oleg", "redmine", "42", (_entry(),), ())
+    plan = _create_plan(PlanStore(), "Oleg", "redmine", "42", (_entry(),), ())
     writes = []
     monkeypatch.setattr(
         "mcp_server.writer.build_user_tracker",
@@ -285,8 +314,14 @@ def test_writer_verifies_current_youtrack_issue_and_returns_safe_row_statuses(
     _write_users(path, [{"name": "Oleg", "is_enable": True, "youtrack": {
         "access_token": "youtrack-secret", "issue_id": "APP-42"
     }}])
-    plan = PlanStore().create(
-        "Oleg", "youtrack", "APP-42", (_entry(), _entry(date="2026-10-21")), ()
+    plan = _create_plan(
+        PlanStore(),
+        "Oleg",
+        "youtrack",
+        "APP-42",
+        (_entry(), _entry(date="2026-10-21")),
+        (),
+        _fingerprint("youtrack", {"access_token": "youtrack-secret", "issue_id": "APP-42"}),
     )
     calls = []
 
@@ -315,7 +350,7 @@ def test_writer_refuses_changed_youtrack_issue_without_writing(tmp_path, monkeyp
     _write_users(path, [{"name": "Oleg", "is_enable": True, "youtrack": {
         "access_token": "secret", "issue_id": "APP-NEW"
     }}])
-    plan = PlanStore().create("Oleg", "youtrack", "APP-OLD", (_entry(),), ())
+    plan = _create_plan(PlanStore(), "Oleg", "youtrack", "APP-OLD", (_entry(),), ())
     writes = []
     monkeypatch.setattr(
         "mcp_server.writer.build_user_tracker",
@@ -326,3 +361,77 @@ def test_writer_refuses_changed_youtrack_issue_without_writing(tmp_path, monkeyp
         execute_plan(plan, path)
 
     assert writes == []
+
+
+def test_plan_store_rejects_duplicate_entry_dates():
+    store = PlanStore()
+
+    with pytest.raises(ValueError, match="unique dates"):
+        store.create(
+            "Oleg",
+            "redmine",
+            "42",
+            (_entry(), _entry(date="2026-10-20", hours=2.0)),
+            (),
+            "test",
+        )
+
+
+def test_writer_refuses_changed_target_config_before_building_tracker(tmp_path, monkeypatch):
+    path = tmp_path / "users.json"
+    initial_config = {"api_key": "original-secret", "user_id": 17, "activity_id": 9}
+    _write_users(
+        path,
+        [{"name": "Oleg", "is_enable": True, "redmine": initial_config}],
+    )
+    plan = _create_plan(
+        PlanStore(),
+        "Oleg",
+        "redmine",
+        "42",
+        (_entry(),),
+        (),
+        _fingerprint("redmine", initial_config),
+    )
+    _write_users(
+        path,
+        [{"name": "Oleg", "is_enable": True, "redmine": {
+            "api_key": "changed-secret", "user_id": 17, "activity_id": 9
+        }}],
+    )
+    assert plan.target_fingerprint not in repr(plan)
+    writes = []
+
+    class FakeTracker:
+        def create_worklogs(self, records):
+            writes.append(records)
+            return []
+
+    def build_tracker(*args, **kwargs):
+        writes.append("built")
+        return FakeTracker()
+
+    monkeypatch.setattr("mcp_server.writer.build_user_tracker", build_tracker)
+
+    with pytest.raises(ProfileConfigError, match="changed since plan creation"):
+        execute_plan(plan, path)
+
+    assert writes == []
+
+
+def test_target_fingerprint_is_canonical_and_scoped_to_destination_block():
+    redmine = {"user_id": 17, "api_key": "secret", "activity_id": 9}
+    expected = hashlib.sha256(
+        json.dumps(redmine, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    ).hexdigest()
+    first = UserProfile(name="Oleg", is_enable=True, redmine=redmine)
+    reordered = UserProfile(
+        name="Another user",
+        is_enable=False,
+        git_email="changed@example.com",
+        redmine={"activity_id": 9, "api_key": "secret", "user_id": 17},
+        youtrack={"access_token": "unrelated-secret"},
+    )
+
+    assert fingerprint_target_config(first, "redmine") == expected
+    assert fingerprint_target_config(reordered, "redmine") == expected
