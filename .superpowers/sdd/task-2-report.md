@@ -44,5 +44,20 @@
 - The brief specifies `list[dict[str, str]]` but not its exact keys or tracker
   encoding. The implementation returns `{"name": ..., "trackers": ...}` with
   tracker kinds comma-separated (empty string when none are configured).
-- Pytest reports an existing AnyIO deprecation warning (`CallSpec2` renamed to
-  `CallSpec`); all tests pass.
+
+## Reviewer follow-up: disable the unused AnyIO pytest plugin
+
+Reviewer Minor finding: normal pytest auto-loaded AnyIO's plugin, which imports the
+deprecated `_pytest.python.CallSpec2` under pytest 9.2 and emitted a warning. The
+suite uses `asyncio.run` and does not use the AnyIO pytest plugin, so a minimal root
+`pytest.ini` disables it. `idna` pin and all code left unchanged.
+
+- File added: `pytest.ini` with `addopts = -p no:anyio`.
+- Focused: `/tmp/opencode/work-assistant-mcp-venv/bin/python -m pytest tests/test_mcp_server.py -q`
+  — `5 passed in 0.87s`.
+- Focused (Task 2 + Task 1 config): `/tmp/opencode/work-assistant-mcp-venv/bin/python -m pytest tests/test_mcp_server.py tests/test_mcp_config.py -q`
+  — `31 passed in 0.89s`.
+- Full suite: `/tmp/opencode/work-assistant-mcp-venv/bin/python -m pytest -q`
+  — `238 passed in 1.42s`.
+- All three runs are warning-free with no extra flags.
+- Commit: `test: disable unused anyio pytest plugin`.
