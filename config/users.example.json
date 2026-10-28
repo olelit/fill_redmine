@@ -1,0 +1,11 @@
+{
+  "users": [
+    {
+      "name": "CHANGE_ME",
+      "is_enable": false,
+      "git_email": "",
+      "redmine": {"api_key": "", "user_id": 1, "activity_id": 1, "comment": "development"},
+      "youtrack": {"access_token": "", "issue_id": "PROJECT-1"}
+    }
+  ]
+}

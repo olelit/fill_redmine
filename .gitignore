@@ -11,3 +11,4 @@ fill_redmine.db-shm
 work_assistant.db-wal
 work_assistant.db-shm
 .superpowers/
+config/users.json
