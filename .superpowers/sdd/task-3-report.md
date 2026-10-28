@@ -45,3 +45,38 @@
 
 - No outstanding concerns. GUI/manual testing was not performed; the tools were verified through
   the in-memory MCP client and the full automated suite.
+
+## Task 3 reviewer follow-up
+
+### RED/GREEN evidence
+
+- RED: `/tmp/opencode/work-assistant-mcp-venv/bin/python -m pytest tests/test_mcp_read_tools.py -q`
+  — `5 failed, 13 passed in 1.11s`. Four cases proved fractional Redmine IDs and booleans were
+  accepted. The invalid-repository MCP case got the server's unexpected-tool fallback instead of
+  the expected safe `Git commit read failed` tool error.
+- GREEN focused: `/tmp/opencode/work-assistant-mcp-venv/bin/python -m pytest
+  tests/test_mcp_read_tools.py tests/test_git_client.py -q` — `27 passed in 1.10s`.
+- GREEN full suite: `/tmp/opencode/work-assistant-mcp-venv/bin/python -m pytest -q` —
+  `256 passed in 1.45s`.
+- `git diff --check` completed without output.
+
+### Files changed
+
+- `mcp_server/tracker_access.py`: rejects bool and non-string/non-integer Redmine IDs while retaining
+  positive integers and integer strings.
+- `mcp_server/read_tools.py`: translates `GitError` from the registered Git tool to a generic safe
+  `ToolError`.
+- `tests/test_mcp_read_tools.py`: covers invalid/valid Redmine IDs and generic errors for invalid
+  Git repository paths.
+- `.superpowers/sdd/task-3-report.md`: this follow-up record.
+
+### Self-review
+
+- Invalid IDs return only the field name, never the supplied ID or credential. `int()` is still used
+  for supported integer strings, but floats and booleans are rejected before conversion.
+- Git reads remain through `GitClient.list_commits`; only `GitError` is translated, and its
+  underlying path/email details are not sent to the tool caller. The Git client and tracker modules,
+  registration, dependencies, and unrelated behavior were not changed.
+- Implementation commit: `11d8928bb8a15e13191b12a462f7e8f4167ef929`.
+- No outstanding concerns. GUI/manual testing was not performed; these changes were verified via
+  unit tests and the in-memory MCP client.
