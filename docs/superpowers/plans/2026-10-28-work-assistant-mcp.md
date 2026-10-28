@@ -273,15 +273,16 @@ Expected: PASS. Commit as `feat: add read-only MCP tracker and git tools`.
 
 **Interfaces:**
 - `PlannedEntry(date: str, hours: float, comment: str, commit_hashes: tuple)` contains only data shown to the user; the tuple stores zero or more validated commit hashes.
-- `WritePlan(plan_id: str, user_name: str, destination_kind: str, issue_id: str, entries: tuple, warnings: tuple, created_at: float)` contains no credentials. Redmine integer issue IDs are stored as decimal strings; YouTrack IDs remain strings.
-- `PlanStore.create(user_name, destination_kind, issue_id, entries, warnings) -> WritePlan` creates a random ID; `PlanStore.claim(plan_id) -> WritePlan` rejects unknown, expired, or already claimed plans; `PlanStore.validate_fresh(plan) -> None` rechecks expiry after elicitation.
+- `WritePlan(plan_id: str, user_name: str, destination_kind: str, issue_id: str, entries: tuple, warnings: tuple, target_fingerprint: str, created_at: float)` contains no credentials; the target fingerprint is an internal SHA-256 digest of canonical target-profile JSON and is never returned or logged. Redmine integer issue IDs are stored as decimal strings; YouTrack IDs remain strings.
+- `PlanStore.create(user_name, destination_kind, issue_id, entries, warnings, target_fingerprint) -> WritePlan` creates a random ID and rejects multiple entries for the same date; `PlanStore.claim(plan_id) -> WritePlan` rejects unknown, expired, or already claimed plans; `PlanStore.validate_fresh(plan) -> None` rechecks expiry after elicitation.
+- `fingerprint_target_config(profile: UserProfile, destination_kind: str) -> str` computes the target profile digest used at prepare and write time.
 - `write_plan(plan_id: str, ctx: Context) -> dict[str, object]` is the only MCP tool that reaches `create_worklogs`.
-- `execute_plan(plan: WritePlan, users_path: Path) -> dict[str, object]` reloads the enabled profile, injects `plan.issue_id` for Redmine or validates the configured YouTrack issue, then calls `create_worklogs` and returns per-entry outcomes.
+- `execute_plan(plan: WritePlan, users_path: Path) -> dict[str, object]` reloads the enabled profile, verifies its target fingerprint, injects `plan.issue_id` for Redmine or validates the configured YouTrack issue, then calls `create_worklogs` and returns per-entry outcomes.
 - `register_write_tool(server, store, execute)` injects the writer callback so the tool can be tested without network access.
 
 - [ ] **Step 1: Add failing plan-store and write-gate tests**
 
-Test unknown, expired, and replayed plan IDs with an injected clock. Add in-memory MCP tests using an executor spy: an accepted `approved=True` elicitation calls the executor once; declined, canceled, false, and unsupported elicitation call it zero times.
+Test unknown, expired, and replayed plan IDs with an injected clock; reject multiple entries for the same date. Add in-memory MCP tests using an executor spy: an accepted `approved=True` elicitation calls the executor once; declined, canceled, false, and unsupported elicitation call it zero times. Test that a target-profile change after preparation is rejected before invoking the writer.
 
 ```python
 def test_plan_store_claims_once():
@@ -301,7 +302,7 @@ Expected: FAIL because plan storage and the write tool do not exist.
 
 - [ ] **Step 3: Implement plan storage and approval**
 
-Use `secrets.token_urlsafe(24)` and a monotonic clock. Claim/remove the plan before elicitation, preventing concurrent or replayed writes. Use the MCP SDK v2 `Context` and a flat Pydantic form; the message itself contains exact user, date, issue, hours and comments. Catch elicitation failures separately and return a blocked result without calling the writer.
+Use `secrets.token_urlsafe(24)` and a monotonic clock. Claim/remove the plan before elicitation, preventing concurrent or replayed writes. Use the MCP SDK v2 `Context` and a flat Pydantic form; the message itself contains exact user, date, issue, hours and comments. Catch elicitation failures separately and return a blocked result without calling the writer. Compute `target_fingerprint` as SHA-256 of canonical sorted JSON for only the destination tracker block; keep it out of repr, tool results, logs, and elicitation. Recompute it from the freshly loaded profile in `execute_plan` and compare before any tracker call. Reject duplicate dates when creating a plan because tracker clients report errors by date and per-entry results require unique dates.
 
 ```python
 class Approval(BaseModel):
@@ -384,6 +385,7 @@ def register_redmine_tools(server, users_path: Path, plans: PlanStore) -> None:
             str(issue_id),
             (PlannedEntry(date, hours, required_redmine_comment(profile)),),
             (),
+            fingerprint_target_config(profile, "redmine"),
         )
         return public_plan(plan)
 ```
@@ -415,7 +417,7 @@ Expected: the new transfer tests fail because only autofill exists.
 
 - [ ] **Step 3: Implement transfer preparation**
 
-Read YouTrack daily totals and Redmine worklogs for the range. Compare only entries for the request issue and configured per-user comment; put exact duplicates and amount conflicts in `warnings`. Store only conflict-free new rows in the plan. If no rows remain, return `status="nothing_to_write"` and do not create a plan.
+Read YouTrack daily totals and Redmine worklogs for the range. Compare only entries for the request issue and configured per-user comment; put exact duplicates and amount conflicts in `warnings`. Store only conflict-free new rows in the plan with `fingerprint_target_config(profile, "redmine")`. If no rows remain, return `status="nothing_to_write"` and do not create a plan.
 
 ```python
 for source_row in youtrack_rows:
@@ -436,6 +438,8 @@ for source_row in youtrack_rows:
             PlannedEntry(source_row.date, source_row.hours, comment, ())
         )
 ```
+
+Create the plan with the accumulated entries and the Redmine target fingerprint. The one-row-per-day aggregation satisfies the plan store's unique-date invariant.
 
 - [ ] **Step 4: Run focused tests and commit**
 
@@ -465,7 +469,7 @@ Expected: FAIL because the prepare tool and typed entry model do not exist.
 
 - [ ] **Step 3: Implement commit-backed plan validation**
 
-Re-read current YouTrack daily totals and Git commits for the selected profile, path, and period. Require every entry date to contain at least one listed commit hash whose author email and commit date match. Ensure current plus proposed hours do not exceed 8 and that each proposed duration is a positive multiple of 0.5. Preserve the agent's non-empty comment verbatim.
+Re-read current YouTrack daily totals and Git commits for the selected profile, path, and period. Require every entry date to contain at least one listed commit hash whose author email and commit date match. Ensure current plus proposed hours do not exceed 8 and that each proposed duration is a positive multiple of 0.5. Preserve the agent's non-empty comment verbatim. Create the plan with `fingerprint_target_config(profile, "youtrack")`.
 
 ```python
 if len({entry.date for entry in entries}) != len(entries):
