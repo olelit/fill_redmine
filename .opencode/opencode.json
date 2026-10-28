@@ -1,0 +1,14 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "work-assistant": {
+        "type": "local",
+        "command": ["python3", "-m", "mcp_server"],
+        "cwd": ".",
+        "codemode": false,
+        "protocol": "legacy"
+      }
+    }
+  }
+}
