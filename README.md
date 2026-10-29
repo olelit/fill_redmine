@@ -4,6 +4,10 @@ GUI-приложение для учёта времени: проекты, тр�
 YouTrack, git-коммиты), ИИ-план и запись часов в выбранный трекер.
 CLI больше нет — всё делается в графическом окне.
 
+В репозитории также есть локальный MCP-сервер (`mcp_server/`) для работы из
+OpenCode: он читает worklogs и коммиты, готовит план и пишет часы в YouTrack
+только после явного подтверждения.
+
 ## Установка
 
 ```bash
@@ -93,6 +97,89 @@ bash scripts/install_desktop.sh
 Кнопки **Обновить модели** и **Проверить подключение** обращаются к
 провайдеру. Ключи в интерфейсе маскируются, в SQLite хранятся открытым
 текстом (файл БД создаётся с правами `600`).
+
+## MCP-сервер (YouTrack fill)
+
+`mcp_server/` — локальный stdio MCP-сервер. Он использует те же трекеры и
+`GitClient`, что и GUI, но не пишет ничего без подтверждения через MCP
+elicitation.
+
+### Установка и профиль
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+cp .env.example .env                 # нужен YOUTRACK_BASE_URL
+cp config/users.example.json config/users.json
+chmod 600 config/users.json
+```
+
+`config/users.json` содержит токены, в git не попадает (он в `.gitignore`) и
+должен иметь права `600`. Один элемент массива `users` — один профиль:
+
+- `name`, `is_enable`;
+- `git_email` — автор коммитов, по которому фильтруется `git log`;
+- `youtrack.access_token` — токен YouTrack;
+- `youtrack.daily_meeting_issue_id` — issue для daily meeting;
+- `youtrack.daily_meeting_hours` — часы daily meeting (по умолчанию `1.0`);
+- `youtrack.issue_id` — необязательный fallback, если строка плана не задаёт
+  issue.
+
+AI-ключи серверу не нужны: он не вызывает модели. Redmine-сценарии в этой
+фазе не реализованы (Redmine остаётся только в GUI).
+
+### Подключение к OpenCode
+
+Проектный `.opencode/opencode.json` уже запускает сервер:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "work-assistant": {
+        "type": "local",
+        "command": [".venv/bin/python", "-m", "mcp_server"],
+        "cwd": ".",
+        "codemode": false,
+        "protocol": "legacy"
+      }
+    }
+  }
+}
+```
+
+Проверка подключения:
+
+```bash
+opencode mcp list   # work-assistant connected
+```
+
+### Tools и порядок работы
+
+Сервер отдаёт ровно пять tools, без prompts и resources:
+
+| Tool | Назначение |
+| --- | --- |
+| `list_enabled_users` | имена включённых профилей и их трекеры (без секретов) |
+| `get_worklogs` | worklogs профиля за период |
+| `get_git_commits` | коммиты профиля за период |
+| `prepare_youtrack_fill` | собрать план YouTrack из коммитов и worklogs |
+| `write_plan` | записать план после подтверждения |
+
+Порядок: **read → prepare → `write_plan` approval**.
+`prepare_youtrack_fill` ничего не пишет и возвращает `plan_id`, строки и
+warnings; `write_plan` показывает форму подтверждения и выполняется только при
+явном `approved`. План одноразовый и устаревает через 10 минут.
+
+Период по умолчанию — с 1-го числа текущего месяца по сегодня. Issue задаётся
+на уровне строки плана: `DRIVEO-XXXX` берётся из тега в subject/body коммита;
+issue должен встречаться хотя бы в одном из переданных коммитов строки, иначе
+план создаётся с warning (например, для дня без тегов). Часы положительные,
+кратны `0.5`, а сумма с уже записанными за день не больше 8.
+
+Daily meeting — 1 час на `youtrack.daily_meeting_issue_id` в каждый рабочий
+день (Mon–Fri), если он ещё не записан. Строке daily meeting commit hashes не
+нужны; для остальных строк они обязательны.
 
 ## Миграция со старой базы
 

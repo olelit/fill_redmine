@@ -4,8 +4,18 @@
       "name": "CHANGE_ME",
       "is_enable": false,
       "git_email": "",
-      "redmine": {"api_key": "", "user_id": 1, "activity_id": 1, "comment": "development"},
-      "youtrack": {"access_token": "", "issue_id": "PROJECT-1"}
+      "redmine": {
+        "api_key": "",
+        "user_id": 1,
+        "activity_id": 1,
+        "comment": "development"
+      },
+      "youtrack": {
+        "access_token": "",
+        "issue_id": "",
+        "daily_meeting_issue_id": "",
+        "daily_meeting_hours": 1.0
+      }
     }
   ]
 }

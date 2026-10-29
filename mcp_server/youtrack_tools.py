@@ -4,6 +4,8 @@ from datetime import date, datetime
 from pathlib import Path
 
 from clients.git_client import GitClient, GitError
+from dto.git_commit_dto import GitCommitDTO
+from dto.worklog_dto import WorklogDTO
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import BaseModel
@@ -131,7 +133,7 @@ def _validate_entries(
     entries: list[SuggestedEntry],
     start_date: date,
     end_date: date,
-    commits_by_hash: dict[str, tuple[object, date]],
+    commits_by_hash: dict[str, tuple[GitCommitDTO, date]],
     existing_by_date: dict[str, float],
     existing_daily_dates: set[str],
     daily_issue: str | None,
@@ -234,8 +236,8 @@ def _validate_daily_meeting(
 def _validate_commit_hashes(
     day: str,
     hashes: tuple[str, ...],
-    commits_by_hash: dict[str, tuple[object, date]],
-) -> list[object]:
+    commits_by_hash: dict[str, tuple[GitCommitDTO, date]],
+) -> list[GitCommitDTO]:
     referenced = []
     for commit_hash in hashes:
         commit = commits_by_hash.get(commit_hash)
@@ -251,7 +253,7 @@ def _validate_commit_hashes(
     return referenced
 
 
-def _mentions_issue(commits: list[object], issue: str) -> bool:
+def _mentions_issue(commits: list[GitCommitDTO], issue: str) -> bool:
     pattern = re.compile(rf"(?<![A-Z0-9]){re.escape(issue)}(?!\d)")
     for commit in commits:
         text = f"{commit.subject}\n{commit.body}".upper()
@@ -327,8 +329,8 @@ def _daily_meeting_config(
     return daily_issue, daily_hours
 
 
-def _commits_by_hash(commits) -> dict[str, tuple[object, date]]:
-    by_hash: dict[str, tuple[object, date]] = {}
+def _commits_by_hash(commits: list[GitCommitDTO]) -> dict[str, tuple[GitCommitDTO, date]]:
+    by_hash: dict[str, tuple[GitCommitDTO, date]] = {}
     for commit in commits:
         commit_date = _commit_date(commit)
         if commit_date is None:
@@ -337,7 +339,7 @@ def _commits_by_hash(commits) -> dict[str, tuple[object, date]]:
     return by_hash
 
 
-def _commit_date(commit) -> date | None:
+def _commit_date(commit: GitCommitDTO) -> date | None:
     raw = commit.date
     if isinstance(raw, datetime):
         return raw.date()
@@ -349,7 +351,7 @@ def _commit_date(commit) -> date | None:
         return None
 
 
-def _existing_hours_by_date(worklogs) -> dict[str, float]:
+def _existing_hours_by_date(worklogs: list[WorklogDTO]) -> dict[str, float]:
     by_date: dict[str, float] = {}
     for item in worklogs:
         by_date[item.date] = by_date.get(item.date, 0.0) + float(item.hours)
@@ -364,10 +366,8 @@ def _default_period(today: date) -> tuple[date, date]:
     return today.replace(day=1), today
 
 
-def _period(
-    start: str | None, end: str | None, today: date | None = None
-) -> tuple[date, date]:
-    today = today if today is not None else date.today()
+def _period(start: str | None, end: str | None) -> tuple[date, date]:
+    today = date.today()
     default_start, default_end = _default_period(today)
     start_date = _period_date(start) if start is not None else default_start
     end_date = _period_date(end) if end is not None else default_end

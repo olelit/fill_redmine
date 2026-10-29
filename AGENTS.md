@@ -7,14 +7,17 @@ This file provides guidance for agents working on this codebase.
 Work Assistant is a Python/Tkinter GUI for tracking time across projects. It
 reads worklogs from tracker sources (Redmine, YouTrack, git commits), builds a
 tracking report (optionally with AI help) and writes the approved hours to a
-destination tracker. It uses:
+destination tracker. A local MCP server exposes the same trackers and git
+client to OpenCode for per-issue YouTrack fill. It uses:
 
 - `tkinter` for the GUI
 - `requests` for sync HTTP requests
 - `python-dotenv` for environment variable management
+- `mcp` for the local stdio server
 
 There is no CLI entry point: the application is launched from `work_assistant.py`
-(and `fill_redmine_gui.py` is kept as an alias).
+(and `fill_redmine_gui.py` is kept as an alias). The MCP server is started with
+`python -m mcp_server`.
 
 ## Project Structure
 
@@ -48,7 +51,21 @@ fill_redmine/
 │   └── ai/                  # Multi-provider AI clients
 ├── dto/                     # Data transfer objects (dataclasses)
 ├── storage/                 # SQLite repositories and migrations
-└── configs/                 # Dataclasses and env config
+├── configs/                 # Dataclasses and env config
+├── mcp_server/              # Local stdio MCP server (OpenCode)
+│   ├── __main__.py          # `python -m mcp_server` entry point
+│   ├── app.py               # create_server: tool registration
+│   ├── config.py            # JSON user profiles (config/users.json)
+│   ├── user_tools.py        # list_enabled_users
+│   ├── read_tools.py        # get_worklogs, get_git_commits
+│   ├── tracker_access.py    # profile -> tracker construction
+│   ├── youtrack_tools.py    # prepare_youtrack_fill
+│   ├── plans.py             # one-time write plans
+│   ├── write_tools.py       # write_plan approval gate
+│   └── writer.py            # approved plan execution
+└── config/
+    ├── users.example.json   # tracked template with blank placeholders
+    └── users.json           # ignored, 0600, real tokens
 ```
 
 ## Build/Run Commands
@@ -66,7 +83,24 @@ cp .env.example .env
 python work_assistant.py
 ```
 
-The GUI requires a display; there are no CLI commands.
+The GUI requires a display; there are no GUI CLI commands. The MCP server runs
+over stdio instead (see below).
+
+### Running the MCP server
+
+```bash
+# One-time profile setup; config/users.json is ignored and must be 0600
+cp config/users.example.json config/users.json
+chmod 600 config/users.json
+
+# Start the stdio server directly
+.venv/bin/python -m mcp_server
+```
+
+OpenCode starts it automatically from `.opencode/opencode.json`
+(`.venv/bin/python -m mcp_server`, `cwd: "."`, `codemode: false`,
+`protocol: "legacy"`). Verify with `opencode mcp list` (expect
+`work-assistant connected`).
 
 ### Testing
 
@@ -200,6 +234,49 @@ response.raise_for_status()
 - `fields` drives the settings form; `get_worklogs` is the read path;
   `create_worklogs` is optional (`can_write = True`)
 
+## MCP Server
+
+`mcp_server/` is a local stdio server for OpenCode. It exposes exactly five
+tools and no prompts/resources:
+
+- `list_enabled_users` — enabled profile names and tracker kinds only;
+- `get_worklogs` — worklogs for one profile and period;
+- `get_git_commits` — commits for one profile and period;
+- `prepare_youtrack_fill` — builds a per-issue YouTrack plan, never writes;
+- `write_plan` — executes a plan only after explicit elicitation approval.
+
+Flow is read → prepare → `write_plan` approval:
+
+1. `prepare_youtrack_fill` validates dates, hours, issue IDs and commit hashes,
+   then stores a one-time plan (`plan_id`, 10-minute TTL). It returns entries
+   and warnings but performs no POST and calls no AI.
+2. `write_plan` claims the plan, asks for `approved: true`, rechecks freshness
+   and then writes. Missing approval, unknown/replayed/expired plans and clients
+   without elicitation support all return `{"status": "blocked"}`.
+
+YouTrack fill rules:
+
+- Period defaults to the 1st of the current month through today.
+- Issue is per entry (`DRIVEO-XXXX` from commit subject/body). If no referenced
+  commit mentions the issue, the plan is still created with a warning.
+- Daily meeting uses `youtrack.daily_meeting_issue_id` for
+  `youtrack.daily_meeting_hours` (default `1.0`) on Mon–Fri, and is rejected if
+  that date already has a worklog for the issue. Other entries require commit
+  hashes.
+- Hours are positive multiples of `0.5`; proposed plus existing daily hours
+  must not exceed 8.
+- Redmine MCP scenarios are not implemented in this phase; Redmine remains
+  GUI-only. The server needs no AI keys.
+
+Security rules:
+
+- `config/users.json` holds tokens, is git-ignored and must stay `0600`. Only
+  `config/users.example.json` with blank placeholders is tracked.
+- Tool output, errors and logs must never contain access tokens, API keys or
+  authorization headers.
+- Tests use in-memory MCP clients, fakes and Git fixtures; they must not make
+  live tracker requests or write to real trackers.
+
 ## Environment Variables
 
 - Never commit secrets to version control
@@ -207,12 +284,13 @@ response.raise_for_status()
 - Document required variables in `.env.example`
 
 Required variables:
-- `REDMINE_BASE_URL` — Redmine instance URL
-- `YOUTRACK_BASE_URL` — YouTrack instance URL
+- `REDMINE_BASE_URL` — Redmine instance URL (GUI only)
+- `YOUTRACK_BASE_URL` — YouTrack instance URL (GUI and MCP server)
 - `WORK_ASSISTANT_DB` — optional path to the SQLite database
   (`FILL_REDMINE_DB` is still accepted as a legacy alias)
 
-Tracker keys, AI provider keys and models are stored in SQLite, not in env.
+Tracker keys, AI provider keys and models are stored in SQLite for the GUI, not
+in env. The MCP server reads profiles and tokens from `config/users.json`.
 
 ## Making Changes
 
@@ -220,3 +298,6 @@ Tracker keys, AI provider keys and models are stored in SQLite, not in env.
 2. Run `pytest` to verify the suite is green
 3. If adding ruff, run `ruff check . && ruff format .` before committing
 4. Each task ends with green tests and its own commit
+
+The MCP catalog is asserted in `tests/test_mcp_server.py` (five tools, no
+prompts/resources/instructions). Keep it in sync when adding tools.

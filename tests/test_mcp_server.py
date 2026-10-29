@@ -83,9 +83,10 @@ def test_server_exposes_task_tools_without_prompts_or_resources(tmp_path):
             tools = await client.list_tools()
             prompts = await client.list_prompts()
             resources = await client.list_resources()
-        return tools, prompts, resources
+            instructions = client.instructions
+        return tools, prompts, resources, instructions
 
-    tools, prompts, resources = asyncio.run(inspect_server())
+    tools, prompts, resources, instructions = asyncio.run(inspect_server())
 
     assert [tool.name for tool in tools.tools] == [
         "list_enabled_users",
@@ -96,6 +97,7 @@ def test_server_exposes_task_tools_without_prompts_or_resources(tmp_path):
     ]
     assert prompts.prompts == []
     assert resources.resources == []
+    assert instructions is None
 
 
 def test_missing_config_returns_safe_tool_error(tmp_path):
