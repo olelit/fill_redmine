@@ -173,6 +173,7 @@ Commit: `feat: write YouTrack plans per issue`.
 - Create: `mcp_server/youtrack_tools.py`
 - Create: `tests/test_mcp_youtrack_tools.py`
 - Modify: `mcp_server/app.py`
+- Modify: `tests/test_mcp_server.py` (add the new tool to the catalog so the suite stays green; Task 4 finalizes docs/config)
 
 **Interfaces:**
 - `SuggestedEntry` (Pydantic `BaseModel`):
