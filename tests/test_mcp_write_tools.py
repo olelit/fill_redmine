@@ -189,7 +189,62 @@ def test_write_tool_escapes_untrusted_comment_in_structured_elicitation(tmp_path
         "user": "Oleg",
         "tracker": "youtrack",
         "issue": "APP-42",
-        "entries": [{"date": "2026-10-20", "hours": 1.5, "comment": comment}],
+        "entries": [
+            {"date": "2026-10-20", "hours": 1.5, "comment": comment, "issue": "APP-42"}
+        ],
+        "warnings": [],
+    }
+    assert "private-token" not in messages[0]
+
+
+def test_write_tool_shows_per_entry_issue_and_plan_warnings(tmp_path):
+    path = tmp_path / "users.json"
+    _write_users(
+        path,
+        [{"name": "Oleg", "is_enable": True, "youtrack": {
+            "access_token": "private-token", "issue_id": "APP-42"
+        }}],
+    )
+    store = PlanStore()
+    plan = _create_plan(
+        store,
+        "Oleg",
+        "youtrack",
+        "APP-42",
+        (
+            _entry(),
+            _entry(date="2026-10-21", comment="Fix bug", issue_id="APP-7"),
+        ),
+        ("Day 2026-10-20 has no commits",),
+    )
+    messages = []
+
+    async def elicitation_callback(context, params):
+        messages.append(params.message)
+        return types.ElicitResult(action="decline")
+
+    async def call():
+        async with Client(
+            create_server(path, write_store=store, write_executor=lambda _plan: {}),
+            mode="legacy",
+            elicitation_callback=elicitation_callback,
+        ) as client:
+            return await client.call_tool("write_plan", {"plan_id": plan.plan_id})
+
+    asyncio.run(call())
+
+    assert len(messages) == 1
+    payload = json.loads(messages[0].split("\n", 1)[1])
+    assert payload == {
+        "user": "Oleg",
+        "tracker": "youtrack",
+        "issue": "APP-42",
+        "entries": [
+            {"date": "2026-10-20", "hours": 1.5, "comment": "Review changes",
+             "issue": "APP-42"},
+            {"date": "2026-10-21", "hours": 1.5, "comment": "Fix bug", "issue": "APP-7"},
+        ],
+        "warnings": ["Day 2026-10-20 has no commits"],
     }
     assert "private-token" not in messages[0]
 
@@ -323,7 +378,9 @@ def test_writer_reloads_enabled_profile_and_injects_redmine_issue(tmp_path, monk
     assert [(record.date, record.hours, record.description) for record in records] == [
         ("2026-10-20", 1.5, "Review changes")
     ]
-    assert result == {"results": [{"date": "2026-10-20", "status": "created"}]}
+    assert result == {
+        "results": [{"date": "2026-10-20", "issue": "42", "status": "created"}]
+    }
     assert "current-secret" not in json.dumps(result)
 
 
@@ -345,50 +402,163 @@ def test_writer_refuses_disabled_profile_without_writing(tmp_path, monkeypatch):
     assert writes == []
 
 
-def test_writer_verifies_current_youtrack_issue_and_returns_safe_row_statuses(
-    tmp_path, monkeypatch
-):
+def test_writer_groups_youtrack_entries_by_issue(tmp_path, monkeypatch):
     path = tmp_path / "users.json"
-    _write_users(path, [{"name": "Oleg", "is_enable": True, "youtrack": {
-        "access_token": "youtrack-secret", "issue_id": "APP-42"
-    }}])
+    config = {"access_token": "youtrack-secret", "issue_id": "APP-42"}
+    _write_users(path, [{"name": "Oleg", "is_enable": True, "youtrack": config}])
     plan = _create_plan(
         PlanStore(),
         "Oleg",
         "youtrack",
         "APP-42",
-        (_entry(), _entry(date="2026-10-21")),
+        (
+            _entry(),
+            _entry(date="2026-10-21"),
+            _entry(date="2026-10-22", issue_id="APP-7"),
+        ),
         (),
-        _fingerprint("youtrack", {"access_token": "youtrack-secret", "issue_id": "APP-42"}),
+        _fingerprint("youtrack", config),
     )
-    calls = []
+    builds = []
+    written = []
 
     class FakeTracker:
-        def create_worklogs(self, records):
-            calls.append(records)
-            return [("2026-10-21", "secret server response")]
+        def __init__(self, issue_id):
+            self.issue_id = issue_id
 
-    monkeypatch.setattr("mcp_server.writer.build_user_tracker", lambda *a, **k: FakeTracker())
+        def create_worklogs(self, records):
+            written.append((self.issue_id, [record.date for record in records]))
+            return []
+
+    def build(profile, kind, *, issue_id=None, for_write=False):
+        builds.append((kind, issue_id, for_write))
+        return FakeTracker(issue_id)
+
+    monkeypatch.setattr("mcp_server.writer.build_user_tracker", build)
 
     result = execute_plan(plan, path)
 
-    assert len(calls) == 1
+    assert builds == [
+        ("youtrack", "APP-42", True),
+        ("youtrack", "APP-7", True),
+    ]
+    assert written == [
+        ("APP-42", ["2026-10-20", "2026-10-21"]),
+        ("APP-7", ["2026-10-22"]),
+    ]
     assert result == {
         "results": [
-            {"date": "2026-10-20", "status": "created"},
-            {"date": "2026-10-21", "status": "failed"},
+            {"date": "2026-10-20", "issue": "APP-42", "status": "created"},
+            {"date": "2026-10-21", "issue": "APP-42", "status": "created"},
+            {"date": "2026-10-22", "issue": "APP-7", "status": "created"},
         ]
     }
     assert "youtrack-secret" not in json.dumps(result)
+
+
+def test_writer_failure_of_one_youtrack_issue_group_keeps_the_other(tmp_path, monkeypatch):
+    path = tmp_path / "users.json"
+    config = {"access_token": "youtrack-secret", "issue_id": "APP-42"}
+    _write_users(path, [{"name": "Oleg", "is_enable": True, "youtrack": config}])
+    plan = _create_plan(
+        PlanStore(),
+        "Oleg",
+        "youtrack",
+        "APP-42",
+        (
+            _entry(),
+            _entry(date="2026-10-21", issue_id="APP-7"),
+        ),
+        (),
+        _fingerprint("youtrack", config),
+    )
+    written = []
+
+    class FakeTracker:
+        def __init__(self, issue_id):
+            self.issue_id = issue_id
+
+        def create_worklogs(self, records):
+            written.append([record.date for record in records])
+            if self.issue_id == "APP-42":
+                return [("2026-10-20", "secret server response")]
+            return []
+
+    monkeypatch.setattr(
+        "mcp_server.writer.build_user_tracker",
+        lambda *a, issue_id=None, **k: FakeTracker(issue_id),
+    )
+
+    result = execute_plan(plan, path)
+
+    assert written == [["2026-10-20"], ["2026-10-21"]]
+    assert result == {
+        "results": [
+            {"date": "2026-10-20", "issue": "APP-42", "status": "failed"},
+            {"date": "2026-10-21", "issue": "APP-7", "status": "created"},
+        ]
+    }
     assert "secret server response" not in json.dumps(result)
 
 
-def test_writer_refuses_changed_youtrack_issue_without_writing(tmp_path, monkeypatch):
+def test_writer_keeps_other_youtrack_issue_groups_when_one_group_raises(tmp_path, monkeypatch):
     path = tmp_path / "users.json"
-    _write_users(path, [{"name": "Oleg", "is_enable": True, "youtrack": {
-        "access_token": "secret", "issue_id": "APP-NEW"
-    }}])
-    plan = _create_plan(PlanStore(), "Oleg", "youtrack", "APP-OLD", (_entry(),), ())
+    config = {"access_token": "youtrack-secret", "issue_id": "APP-42"}
+    _write_users(path, [{"name": "Oleg", "is_enable": True, "youtrack": config}])
+    plan = _create_plan(
+        PlanStore(),
+        "Oleg",
+        "youtrack",
+        "APP-42",
+        (
+            _entry(issue_id="APP-1"),
+            _entry(date="2026-10-21", issue_id="APP-2"),
+        ),
+        (),
+        _fingerprint("youtrack", config),
+    )
+    written = []
+
+    class FakeTracker:
+        def __init__(self, issue_id):
+            self.issue_id = issue_id
+
+        def create_worklogs(self, records):
+            written.append(self.issue_id)
+            if self.issue_id == "APP-1":
+                raise RuntimeError("tracker exploded")
+            return []
+
+    monkeypatch.setattr(
+        "mcp_server.writer.build_user_tracker",
+        lambda *a, issue_id=None, **k: FakeTracker(issue_id),
+    )
+
+    result = execute_plan(plan, path)
+
+    assert written == ["APP-1", "APP-2"]
+    assert result == {
+        "results": [
+            {"date": "2026-10-20", "issue": "APP-1", "status": "failed"},
+            {"date": "2026-10-21", "issue": "APP-2", "status": "created"},
+        ]
+    }
+    assert "tracker exploded" not in json.dumps(result)
+
+
+def test_writer_refuses_empty_youtrack_issue_before_writing(tmp_path, monkeypatch):
+    path = tmp_path / "users.json"
+    config = {"access_token": "secret", "issue_id": "APP-42"}
+    _write_users(path, [{"name": "Oleg", "is_enable": True, "youtrack": config}])
+    plan = _create_plan(
+        PlanStore(),
+        "Oleg",
+        "youtrack",
+        "",
+        (_entry(), _entry(date="2026-10-21", issue_id="APP-7")),
+        (),
+        _fingerprint("youtrack", config),
+    )
     writes = []
     monkeypatch.setattr(
         "mcp_server.writer.build_user_tracker",
@@ -399,6 +569,82 @@ def test_writer_refuses_changed_youtrack_issue_without_writing(tmp_path, monkeyp
         execute_plan(plan, path)
 
     assert writes == []
+
+
+def test_writer_refuses_changed_youtrack_config_without_writing(tmp_path, monkeypatch):
+    path = tmp_path / "users.json"
+    old_config = {"access_token": "secret", "issue_id": "APP-OLD"}
+    _write_users(path, [{"name": "Oleg", "is_enable": True, "youtrack": old_config}])
+    plan = _create_plan(
+        PlanStore(),
+        "Oleg",
+        "youtrack",
+        "APP-OLD",
+        (_entry(),),
+        (),
+        _fingerprint("youtrack", old_config),
+    )
+    _write_users(
+        path,
+        [{"name": "Oleg", "is_enable": True, "youtrack": {
+            "access_token": "secret", "issue_id": "APP-NEW"
+        }}],
+    )
+    writes = []
+    monkeypatch.setattr(
+        "mcp_server.writer.build_user_tracker",
+        lambda *args, **kwargs: writes.append(True),
+    )
+
+    with pytest.raises(ProfileConfigError):
+        execute_plan(plan, path)
+
+    assert writes == []
+
+
+def test_plan_store_accepts_same_date_for_different_issues():
+    store = PlanStore()
+
+    plan = _create_plan(
+        store,
+        "Oleg",
+        "youtrack",
+        "APP-42",
+        (_entry(), _entry(issue_id="APP-7")),
+        (),
+    )
+
+    assert [entry.issue_id for entry in plan.entries] == ["", "APP-7"]
+
+
+def test_plan_store_rejects_duplicate_date_and_issue():
+    store = PlanStore()
+
+    with pytest.raises(ValueError, match="unique dates and issues"):
+        store.create(
+            "Oleg",
+            "youtrack",
+            "APP-42",
+            (
+                _entry(),
+                _entry(issue_id="APP-42"),
+            ),
+            (),
+            "test",
+        )
+
+    with pytest.raises(ValueError, match="unique dates and issues"):
+        store.create(
+            "Oleg",
+            "youtrack",
+            "APP-42",
+            (
+                _entry(issue_id="APP-7"),
+                _entry(issue_id="APP-7"),
+            ),
+            (),
+            "test",
+        )
 
 
 def test_plan_store_rejects_duplicate_entry_dates():

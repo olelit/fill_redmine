@@ -5,7 +5,7 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
 from pydantic import BaseModel
 
-from mcp_server.plans import PlanError, PlanStore, WritePlan
+from mcp_server.plans import PlanError, PlanStore, WritePlan, plan_entry_issue
 
 
 class _Approval(BaseModel):
@@ -47,9 +47,15 @@ def _approval_message(plan: WritePlan) -> str:
         "tracker": plan.destination_kind,
         "issue": plan.issue_id,
         "entries": [
-            {"date": entry.date, "hours": entry.hours, "comment": entry.comment}
+            {
+                "date": entry.date,
+                "hours": entry.hours,
+                "comment": entry.comment,
+                "issue": plan_entry_issue(plan, entry),
+            }
             for entry in plan.entries
         ],
+        "warnings": list(plan.warnings),
     }
     return "Approve writing this worklog plan?\n" + json.dumps(
         payload,

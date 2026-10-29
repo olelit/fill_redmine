@@ -21,6 +21,7 @@ class PlannedEntry:
     hours: float
     comment: str
     commit_hashes: tuple[str, ...]
+    issue_id: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "commit_hashes", tuple(self.commit_hashes))
@@ -40,6 +41,10 @@ class WritePlan:
     def __post_init__(self) -> None:
         object.__setattr__(self, "entries", tuple(self.entries))
         object.__setattr__(self, "warnings", tuple(self.warnings))
+
+
+def plan_entry_issue(plan: WritePlan, entry: PlannedEntry) -> str:
+    return (entry.issue_id or plan.issue_id).strip()
 
 
 def fingerprint_target_config(profile: UserProfile, destination_kind: str) -> str:
@@ -69,8 +74,9 @@ class PlanStore:
         target_fingerprint: str,
     ) -> WritePlan:
         entries = tuple(entries)
-        if len({entry.date for entry in entries}) != len(entries):
-            raise ValueError("Plan entries must have unique dates")
+        keys = {(entry.date, (entry.issue_id or issue_id).strip()) for entry in entries}
+        if len(keys) != len(entries):
+            raise ValueError("Plan entries must have unique dates and issues")
         plan = WritePlan(
             plan_id=secrets.token_urlsafe(24),
             user_name=user_name,
