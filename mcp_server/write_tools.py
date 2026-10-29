@@ -4,7 +4,7 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
 from pydantic import BaseModel
 
-from mcp_server.plans import PlanError, PlanStore, WritePlan, plan_entry_issue
+from mcp_server.plans import PlanError, PlanStore, WritePlan
 
 
 class _Approval(BaseModel):
@@ -45,11 +45,8 @@ def _approval_message(plan: WritePlan) -> str:
         plan.destination_kind, plan.destination_kind
     )
     total = sum(entry.hours for entry in plan.entries)
-    period = (
-        f"{plan.entries[0].date} — {plan.entries[-1].date}"
-        if plan.entries
-        else "—"
-    )
+    dates = [entry.date for entry in plan.entries]
+    period = f"{min(dates)} — {max(dates)}" if dates else "—"
     lines = [
         f"Записать {len(plan.entries)} worklog'ов на {total:g} ч?",
         f"Пользователь: {plan.user_name}",
