@@ -10,6 +10,9 @@
         "protocol": "legacy",
         "environment": {
           "YOUTRACK_BASE_URL": "https://driv.youtrack.cloud"
+        },
+        "timeout": {
+          "startup": 30000
         }
       }
     }
