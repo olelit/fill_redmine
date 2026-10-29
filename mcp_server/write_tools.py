@@ -45,32 +45,20 @@ def _approval_message(plan: WritePlan) -> str:
         plan.destination_kind, plan.destination_kind
     )
     total = sum(entry.hours for entry in plan.entries)
+    period = (
+        f"{plan.entries[0].date} — {plan.entries[-1].date}"
+        if plan.entries
+        else "—"
+    )
     lines = [
-        "Подтверждение записи worklog'ов",
-        f"Пользователь: {_one_line(plan.user_name)}",
+        f"Записать {len(plan.entries)} worklog'ов на {total:g} ч?",
+        f"Пользователь: {plan.user_name}",
         f"Трекер: {tracker}",
-        f"Строк: {len(plan.entries)}, всего: {total:g} ч",
-        "",
+        f"Период: {period}",
+        f"Предупреждений: {len(plan.warnings)}",
+        "Подробный план выведен в чате.",
     ]
-    last_date = ""
-    for entry in plan.entries:
-        if entry.date != last_date:
-            if last_date:
-                lines.append("")
-            lines.append(entry.date)
-            last_date = entry.date
-        issue = _one_line(plan_entry_issue(plan, entry))
-        comment = _one_line(entry.comment)
-        lines.append(f"  {entry.hours:g} ч  {issue}  {comment}")
-    if plan.warnings:
-        lines.extend(["", "Предупреждения:"])
-        lines.extend(f"- {_one_line(warning)}" for warning in plan.warnings)
-    lines.extend(["", "Записать эти worklog'и? Поставьте галочку подтверждения."])
     return "\n".join(lines)
-
-
-def _one_line(value: object) -> str:
-    return " ".join(str(value).split()).replace("|", "/")
 
 
 def _blocked() -> dict[str, object]:

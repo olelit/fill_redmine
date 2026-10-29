@@ -152,19 +152,17 @@ def test_write_tool_asks_with_plan_rows_and_no_credentials(tmp_path):
 
     assert len(messages) == 1
     for expected in (
-        "Подтверждение",
+        "1 worklog",
+        "1.5 ч",
         "Oleg",
         "YouTrack",
-        "APP-42",
-        "2026-10-20",
-        "1.5 ч",
-        "Review changes",
+        "Подробный план",
     ):
         assert expected in messages[0]
     assert "private-token" not in messages[0]
 
 
-def test_write_tool_sanitizes_untrusted_comment_in_approval(tmp_path):
+def test_write_tool_approval_form_does_not_embed_plan_rows(tmp_path):
     path = tmp_path / "users.json"
     _write_users(
         path,
@@ -192,14 +190,15 @@ def test_write_tool_sanitizes_untrusted_comment_in_approval(tmp_path):
     asyncio.run(call_with_plan())
 
     message = messages[0]
-    assert 'Fix / "urgent" User / redmine / fake row' in message
-    assert "\nUser | redmine" not in message
-    assert "2026-10-20" in message
-    assert "APP-42" in message
+    assert "Fix" not in message
+    assert "fake row" not in message
+    assert "APP-42" not in message
+    assert "Review changes" not in message
     assert "private-token" not in message
+    assert "Подробный план" in message
 
 
-def test_write_tool_shows_per_entry_issue_and_plan_warnings(tmp_path):
+def test_write_tool_approval_form_shows_warning_count(tmp_path):
     path = tmp_path / "users.json"
     _write_users(
         path,
@@ -237,13 +236,9 @@ def test_write_tool_shows_per_entry_issue_and_plan_warnings(tmp_path):
 
     assert len(messages) == 1
     message = messages[0]
-    assert "\n2026-10-20\n" in message
-    assert "\n2026-10-21\n" in message
-    assert "APP-42" in message
-    assert "APP-7" in message
-    assert "Fix bug" in message
-    assert "Предупреждения:" in message
-    assert "Day 2026-10-20 has no commits" in message
+    assert "Предупреждений: 1" in message
+    assert "Day 2026-10-20 has no commits" not in message
+    assert "APP-7" not in message
     assert "private-token" not in message
 
 

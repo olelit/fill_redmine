@@ -4,7 +4,11 @@
     "servers": {
       "work-assistant": {
         "type": "local",
-        "command": [".venv/bin/python", "-m", "mcp_server"],
+        "command": [
+          ".venv/bin/python",
+          "-m",
+          "mcp_server"
+        ],
         "cwd": ".",
         "codemode": false,
         "protocol": "legacy",
@@ -12,7 +16,8 @@
           "YOUTRACK_BASE_URL": "https://driv.youtrack.cloud"
         },
         "timeout": {
-          "startup": 30000
+          "startup": 30000,
+          "catalog": 30000
         }
       }
     }

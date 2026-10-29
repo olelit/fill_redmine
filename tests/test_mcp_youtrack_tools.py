@@ -296,6 +296,60 @@ def test_prepare_accepts_daily_meeting_with_default_hours(tmp_path, monkeypatch)
     assert data["warnings"] == []
 
 
+def test_prepare_accepts_fallback_issue_without_commits(tmp_path, monkeypatch):
+    path = tmp_path / "users.json"
+    _write_users(path, [_user(issue_id="DRIVEO-5062")])
+    _install_fakes(
+        monkeypatch,
+        [_commit("h1", "2026-10-20", "DRIVEO-1 implement")],
+    )
+    store = PlanStore()
+
+    result = _call(
+        path,
+        store,
+        [
+            _entry(
+                issue="DRIVEO-5062",
+                hours=7.0,
+                comment="development",
+                hashes=[],
+            )
+        ],
+        start="2026-10-20",
+        end="2026-10-20",
+    )
+    data = _ok(result)
+
+    assert data["warnings"] == [
+        "2026-10-20: no commits; filled on fallback issue DRIVEO-5062"
+    ]
+    plan = store.claim(data["plan_id"])
+    assert plan.entries[0].issue_id == "DRIVEO-5062"
+    assert plan.entries[0].commit_hashes == ()
+
+
+def test_prepare_rejects_no_commits_for_non_fallback_issue(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "users.json"
+    _write_users(path, [_user(issue_id="DRIVEO-5062")])
+    _install_fakes(
+        monkeypatch,
+        [_commit("h1", "2026-10-20", "DRIVEO-1 implement")],
+    )
+
+    result = _call(
+        path,
+        PlanStore(),
+        [_entry(issue="DRIVEO-1", hours=7.0, hashes=[])],
+        start="2026-10-20",
+        end="2026-10-20",
+    )
+
+    assert "commit hashes are required" in _error(result).lower()
+
+
 def test_prepare_uses_the_current_month_when_period_is_omitted(
     tmp_path, monkeypatch
 ):
@@ -378,7 +432,9 @@ def test_prepare_rejects_invalid_daily_meeting_rows(
     assert SECRET not in error
 
 
-def test_prepare_rejects_daily_meeting_without_configuration(tmp_path, monkeypatch):
+def test_prepare_rejects_hashless_entry_without_daily_or_fallback_config(
+    tmp_path, monkeypatch
+):
     path = tmp_path / "users.json"
     _write_users(path, [_user()])
     _install_fakes(
@@ -395,7 +451,7 @@ def test_prepare_rejects_daily_meeting_without_configuration(tmp_path, monkeypat
     )
 
     error = _error(result)
-    assert "daily meeting" in error.lower()
+    assert "commit hashes are required" in error.lower()
     assert "commit hashes" in error.lower()
 
 

@@ -71,6 +71,7 @@ def _prepare_youtrack_fill(
     start_date, end_date = _period(start, end)
     profile = select_user(load_users(users_path), user_name)
     daily_issue, daily_hours = _daily_meeting_config(profile)
+    fallback_issue = _fallback_issue(profile)
     tracker = build_user_tracker(profile, "youtrack")
 
     commits = GitClient(repo_path).list_commits(
@@ -97,6 +98,7 @@ def _prepare_youtrack_fill(
         existing_daily_dates,
         daily_issue,
         daily_hours,
+        fallback_issue,
     )
 
     plan = plans.create(
@@ -138,6 +140,7 @@ def _validate_entries(
     existing_daily_dates: set[str],
     daily_issue: str | None,
     daily_hours: float,
+    fallback_issue: str | None,
 ) -> tuple[list[PlannedEntry], list[str]]:
     if not entries:
         raise YoutrackFillError("At least one entry is required")
@@ -163,15 +166,24 @@ def _validate_entries(
         seen.add(key)
 
         if not hashes:
-            _validate_daily_meeting(
-                day,
-                entry_date,
-                issue,
-                hours,
-                daily_issue,
-                daily_hours,
-                existing_daily_dates,
-            )
+            if daily_issue is not None and issue == daily_issue:
+                _validate_daily_meeting(
+                    day,
+                    entry_date,
+                    issue,
+                    hours,
+                    daily_issue,
+                    daily_hours,
+                    existing_daily_dates,
+                )
+            elif fallback_issue is not None and issue == fallback_issue:
+                warnings.append(
+                    f"{day}: no commits; filled on fallback issue {issue}"
+                )
+            else:
+                raise YoutrackFillError(
+                    f"{day}: commit hashes are required for issue {issue}"
+                )
         else:
             referenced = _validate_commit_hashes(
                 day, hashes, commits_by_hash
@@ -327,6 +339,20 @@ def _daily_meeting_config(
     if not math.isfinite(daily_hours) or daily_hours <= 0:
         raise ProfileConfigError("Daily meeting hours are invalid")
     return daily_issue, daily_hours
+
+
+def _fallback_issue(profile: UserProfile) -> str | None:
+    raw_issue = profile.youtrack.get("issue_id")
+    if raw_issue is None or (
+        isinstance(raw_issue, str) and not raw_issue.strip()
+    ):
+        return None
+    if not isinstance(raw_issue, str):
+        raise ProfileConfigError("Fallback issue ID is invalid")
+    issue = raw_issue.strip().upper()
+    if not ISSUE_PATTERN.fullmatch(issue):
+        raise ProfileConfigError("Fallback issue ID is invalid")
+    return issue
 
 
 def _commits_by_hash(commits: list[GitCommitDTO]) -> dict[str, tuple[GitCommitDTO, date]]:
