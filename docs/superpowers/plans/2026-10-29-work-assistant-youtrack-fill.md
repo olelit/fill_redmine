@@ -257,6 +257,9 @@ Commit: `feat: prepare per-issue YouTrack fill from commits`.
 - Modify: `README.md`
 - Modify: `AGENTS.md`
 - Modify: `tests/test_mcp_server.py`
+- Modify: `mcp_server/youtrack_tools.py` (Task 3 review nits: trailing newline,
+  remove dead `today` parameter, add parameter type annotations)
+- Modify: `tests/test_mcp_youtrack_tools.py` (trailing newline)
 
 **Interfaces:**
 - `.opencode/opencode.json` запускает `.venv/bin/python -m mcp_server`
@@ -272,6 +275,16 @@ Commit: `feat: prepare per-issue YouTrack fill from commits`.
   `prepare_youtrack_fill`, `write_plan`; prompts/resources пустые.
 - README и AGENTS описывают локальный MCP, `config/users.json` (ignored,
   `0600`), сценарий YouTrack fill, daily meeting и обязательный approval.
+  README должен явно указать:
+  - `pip install -r requirements.txt`, `.env` с `YOUTRACK_BASE_URL`;
+  - `cp config/users.example.json config/users.json`, `chmod 600`;
+  - запуск через OpenCode, `opencode mcp list`;
+  - пять tools и порядок «read → prepare → write_plan approval»;
+  - период по умолчанию — текущий месяц по сегодня;
+  - per-issue из `DRIVEO-XXXX`, warning для no-tag коммитов;
+  - daily meeting 1 ч на рабочий день, если ещё не записан;
+  - Redmine-сценарии в этой фазе не реализованы;
+  - AI-ключи серверу не нужны.
 - Реальный `config/users.json` с токеном создаёт контроллер после задачи;
   в репозиторий он не попадает.
 
