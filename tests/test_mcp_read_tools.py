@@ -348,6 +348,7 @@ def test_server_registers_read_tools_and_write_gate(tmp_path):
         "list_enabled_users",
         "get_worklogs",
         "get_git_commits",
+        "prepare_youtrack_fill",
         "write_plan",
     ]
     assert "users_path" not in str(tools.tools)

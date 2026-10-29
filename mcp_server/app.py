@@ -9,6 +9,7 @@ from mcp_server.read_tools import register_read_tools
 from mcp_server.user_tools import register_user_tools
 from mcp_server.write_tools import register_write_tool
 from mcp_server.writer import execute_plan
+from mcp_server.youtrack_tools import register_youtrack_tools
 
 
 def create_server(
@@ -22,6 +23,7 @@ def create_server(
     register_user_tools(server, resolved_users_path)
     register_read_tools(server, resolved_users_path)
     store = write_store if write_store is not None else PlanStore()
+    register_youtrack_tools(server, resolved_users_path, store)
     executor = (
         write_executor
         if write_executor is not None
