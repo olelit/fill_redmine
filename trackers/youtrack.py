@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from clients.youtrack_client import YoutrackClient
 from dto.worklog_dto import WorklogDTO
@@ -24,7 +24,11 @@ class YoutrackTracker(BaseTracker):
         )
         by_key: dict[tuple[str, str], float] = {}
         for item in items:
-            item_date = datetime.fromtimestamp(item["date"] / 1000).date().isoformat()
+            item_date = (
+                datetime.fromtimestamp(item["date"] / 1000, tz=timezone.utc)
+                .date()
+                .isoformat()
+            )
             issue = (item.get("issue") or {}).get("idReadable") or ""
             minutes = float((item.get("duration") or {}).get("minutes", 0))
             by_key[(item_date, issue)] = by_key.get((item_date, issue), 0) + minutes / 60

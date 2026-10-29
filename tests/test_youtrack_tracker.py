@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -121,10 +121,8 @@ def test_create_worklogs_posts_work_items():
     assert body["duration"]["minutes"] == 240
     assert body["text"] == "dev"
     assert "PROJ-1" in mock_post.call_args.args[0]
-    local_midnight = datetime(
-        2026, 10, 27, tzinfo=datetime.now().astimezone().tzinfo
-    )
-    assert body["date"] == int(local_midnight.timestamp() * 1000)
+    utc_midnight = datetime(2026, 10, 27, tzinfo=timezone.utc)
+    assert body["date"] == int(utc_midnight.timestamp() * 1000)
     assert mock_post.call_args.kwargs["headers"]["Authorization"] == "Bearer token"
 
 

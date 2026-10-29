@@ -1,10 +1,16 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from urllib.parse import quote
 
 import requests
 
 from configs.config import Config
 from dto.worklog_dto import WorklogDTO
+
+
+def _utc_ms(value: datetime) -> int:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return int(value.timestamp() * 1000)
 
 
 class YoutrackClient:
@@ -23,8 +29,8 @@ class YoutrackClient:
         while True:
             params = {
                 "fields": "id,date,duration(minutes),text,issue(idReadable)",
-                "start": int(start_date.timestamp() * 1000),
-                "end": int(end_date.timestamp() * 1000),
+                "start": int(_utc_ms(start_date)),
+                "end": int(_utc_ms(end_date)),
                 "$top": self.PAGE_SIZE,
                 "$skip": skip,
                 "author": "me",
@@ -57,7 +63,10 @@ class YoutrackClient:
                 continue
 
             start_ms = int(
-                datetime.combine(day, datetime.min.time()).timestamp() * 1000
+                datetime.combine(
+                    day, datetime.min.time(), tzinfo=timezone.utc
+                ).timestamp()
+                * 1000
             )
             try:
                 response = requests.post(
