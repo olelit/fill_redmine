@@ -199,6 +199,8 @@ Commit: `feat: write YouTrack plans per issue`.
   - если на эту дату уже есть worklog на `daily_meeting_issue_id`, строка
     отклоняется как дубль;
   - если daily meeting не настроен, строки без `commit_hashes` отклоняются;
+  - `youtrack.issue_id` — fallback: строка без hashes на этот issue
+    принимается с warning и используется, чтобы добрать день до 8 часов;
   - для остальных строк `commit_hashes` обязательны.
 - Ошибки конфигурации и валидации возвращаются как MCP `ToolError` с
   безопасным текстом без токенов.

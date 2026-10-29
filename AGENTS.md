@@ -263,6 +263,13 @@ YouTrack fill rules:
   `youtrack.daily_meeting_hours` (default `1.0`) on Mon–Fri, and is rejected if
   that date already has a worklog for the issue. Other entries require commit
   hashes.
+- `youtrack.issue_id` is the fallback for stretching a day to 8 hours when
+  there are no commits; such entries have no hashes and produce a warning.
+- Keep `write_plan`'s elicitation message short: rows/hours/period/warnings.
+  Print the detailed per-date plan in chat before calling `write_plan`; never
+  dump a large JSON payload into the approval form.
+- YouTrack work item dates are written at UTC midnight (`date` timestamp), not
+  local midnight, so the date does not shift to the previous day.
 - Hours are positive multiples of `0.5`; proposed plus existing daily hours
   must not exceed 8.
 - Redmine MCP scenarios are not implemented in this phase; Redmine remains
