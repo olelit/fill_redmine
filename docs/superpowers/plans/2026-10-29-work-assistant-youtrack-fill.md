@@ -191,7 +191,12 @@ Commit: `feat: write YouTrack plans per issue`.
     (default 1.0);
   - для daily meeting разрешены пустые `commit_hashes`, но только если issue
     совпадает, часы равны настройке и дата — рабочий день (Mon–Fri);
+  - если на эту дату уже есть worklog на `daily_meeting_issue_id`, строка
+    отклоняется как дубль;
+  - если daily meeting не настроен, строки без `commit_hashes` отклоняются;
   - для остальных строк `commit_hashes` обязательны.
+- Ошибки конфигурации и валидации возвращаются как MCP `ToolError` с
+  безопасным текстом без токенов.
 - Валидация:
   - дата в периоде, ISO `YYYY-MM-DD`;
   - issue `^[A-Z][A-Z0-9]+-\d+$` после `strip().upper()`;
