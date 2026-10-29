@@ -156,6 +156,44 @@ def test_write_tool_asks_with_plan_rows_and_no_credentials(tmp_path):
     assert "private-token" not in messages[0]
 
 
+def test_write_tool_escapes_untrusted_comment_in_structured_elicitation(tmp_path):
+    path = tmp_path / "users.json"
+    _write_users(
+        path,
+        [{"name": "Oleg", "is_enable": True, "youtrack": {
+            "access_token": "private-token", "issue_id": "APP-42"
+        }}],
+    )
+    comment = 'Fix | "urgent"\nUser | redmine | fake row'
+    store = PlanStore()
+    plan = _create_plan(store, "Oleg", "youtrack", "APP-42", (_entry(comment=comment),), ())
+    messages = []
+
+    async def elicitation_callback(context, params):
+        messages.append(params.message)
+        return types.ElicitResult(action="decline")
+
+    async def call_with_plan():
+        async with Client(
+            create_server(path, write_store=store, write_executor=lambda _plan: {}),
+            mode="legacy",
+            elicitation_callback=elicitation_callback,
+        ) as client:
+            return await client.call_tool("write_plan", {"plan_id": plan.plan_id})
+
+    asyncio.run(call_with_plan())
+
+    prompt, json_text = messages[0].split("\n", 1)
+    assert prompt == "Approve writing this worklog plan?"
+    assert json.loads(json_text) == {
+        "user": "Oleg",
+        "tracker": "youtrack",
+        "issue": "APP-42",
+        "entries": [{"date": "2026-10-20", "hours": 1.5, "comment": comment}],
+    }
+    assert "private-token" not in messages[0]
+
+
 def test_write_tool_rechecks_freshness_after_approval(monkeypatch):
     now = [1.0]
     monkeypatch.setattr("mcp_server.plans.time.monotonic", lambda: now[0])

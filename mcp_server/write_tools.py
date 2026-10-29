@@ -1,3 +1,4 @@
+import json
 from collections.abc import Callable
 
 from mcp.server import MCPServer
@@ -41,16 +42,20 @@ def register_write_tool(
 
 
 def _approval_message(plan: WritePlan) -> str:
-    lines = [
-        "Approve writing this worklog plan?",
-        "User | Tracker | Issue | Date | Hours | Comment",
-    ]
-    lines.extend(
-        f"{plan.user_name} | {plan.destination_kind} | {plan.issue_id} | "
-        f"{entry.date} | {entry.hours} | {entry.comment}"
-        for entry in plan.entries
+    payload = {
+        "user": plan.user_name,
+        "tracker": plan.destination_kind,
+        "issue": plan.issue_id,
+        "entries": [
+            {"date": entry.date, "hours": entry.hours, "comment": entry.comment}
+            for entry in plan.entries
+        ],
+    }
+    return "Approve writing this worklog plan?\n" + json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
     )
-    return "\n".join(lines)
 
 
 def _blocked() -> dict[str, object]:
