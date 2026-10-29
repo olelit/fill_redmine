@@ -114,6 +114,57 @@ def test_youtrack_read_uses_profile_token_and_aggregates_daily_worklogs(
     assert "youtrack-secret" not in json.dumps(result)
 
 
+def test_youtrack_read_needs_no_saved_issue_and_keeps_issue_ids(tmp_path, monkeypatch):
+    path = tmp_path / "users.json"
+    _write_users(
+        path,
+        [{"name": "Oleg", "is_enable": True, "youtrack": {"access_token": "token"}}],
+    )
+    monkeypatch.setattr(
+        "clients.youtrack_client.YoutrackClient.get_work_items",
+        lambda self, start_date, end_date: [
+            {"date": 1792497600000, "duration": {"minutes": 30}, "issue": {"idReadable": "DRIVEO-1"}},
+            {"date": 1792497600000, "duration": {"minutes": 90}, "issue": {"idReadable": "DRIVEO-2"}},
+        ],
+    )
+
+    profile = load_users(path)[0]
+    assert build_user_tracker(profile, "youtrack").config.get("issue_id") is None
+
+    result = _tool_data(
+        _call_tool(
+            create_server(path),
+            "get_worklogs",
+            {"user_name": "Oleg", "tracker": "youtrack", "start": "2026-10-20", "end": "2026-10-20"},
+        )
+    )
+
+    assert result == [
+        {"date": "2026-10-20", "hours": 0.5, "description": "", "issue": "DRIVEO-1", "source": "youtrack"},
+        {"date": "2026-10-20", "hours": 1.5, "description": "", "issue": "DRIVEO-2", "source": "youtrack"},
+    ]
+
+
+def test_youtrack_adapter_requires_runtime_issue_for_write():
+    profile = UserProfile(
+        name="Oleg", is_enable=True, youtrack={"access_token": "token"}
+    )
+
+    tracker = build_user_tracker(
+        profile, "youtrack", issue_id="DRIVEO-1", for_write=True
+    )
+
+    assert tracker.config["issue_id"] == "DRIVEO-1"
+    assert tracker.config["access_token"] == "token"
+    assert "issue_id" not in profile.youtrack
+    assert build_user_tracker(profile, "youtrack").config.get("issue_id") is None
+    for invalid in (None, "", "   ", 17):
+        with pytest.raises(ProfileConfigError):
+            build_user_tracker(
+                profile, "youtrack", issue_id=invalid, for_write=True
+            )
+
+
 @pytest.mark.parametrize(
     ("start", "end"),
     [("20-10-2026", "2026-10-21"), ("2026-10-22", "2026-10-21")],
@@ -270,7 +321,6 @@ def test_tracker_adapter_clones_config_and_requires_runtime_issue_for_write():
     [
         ("redmine", {"api_key": " ", "user_id": 3, "activity_id": 4}),
         ("youtrack", {"access_token": " ", "issue_id": "APP-1"}),
-        ("youtrack", {"access_token": "hidden-token", "issue_id": " "}),
     ],
 )
 def test_tracker_adapter_rejects_blank_required_fields_without_exposing_credentials(

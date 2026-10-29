@@ -22,15 +22,16 @@ class YoutrackTracker(BaseTracker):
             start_date=datetime.combine(start, datetime.min.time()),
             end_date=datetime.combine(end, datetime.max.time()),
         )
-        by_date: dict[str, float] = {}
+        by_key: dict[tuple[str, str], float] = {}
         for item in items:
             item_date = datetime.fromtimestamp(item["date"] / 1000).date().isoformat()
+            issue = (item.get("issue") or {}).get("idReadable") or ""
             minutes = float((item.get("duration") or {}).get("minutes", 0))
-            by_date[item_date] = by_date.get(item_date, 0) + minutes / 60
+            by_key[(item_date, issue)] = by_key.get((item_date, issue), 0) + minutes / 60
 
         return [
-            WorklogDTO(date=item_date, hours=hours, source=self.kind)
-            for item_date, hours in sorted(by_date.items())
+            WorklogDTO(date=item_date, hours=hours, issue=issue, source=self.kind)
+            for (item_date, issue), hours in sorted(by_key.items())
         ]
 
     def create_worklogs(self, records: list[WorklogDTO]) -> list[tuple[str, str]]:

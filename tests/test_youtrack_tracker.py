@@ -54,6 +54,38 @@ def test_tracker_aggregates_minutes_by_day():
     assert worklogs[0].source == "youtrack"
 
 
+def test_tracker_aggregates_minutes_by_day_and_issue():
+    tracker = YoutrackTracker({"access_token": "token"})
+    with patch.object(
+        YoutrackClient,
+        "get_work_items",
+        return_value=[
+            {
+                "date": 1790812800000,
+                "duration": {"minutes": 60},
+                "issue": {"idReadable": "APP-1"},
+            },
+            {
+                "date": 1790812800000,
+                "duration": {"minutes": 90},
+                "issue": {"idReadable": "APP-1"},
+            },
+            {
+                "date": 1790812800000,
+                "duration": {"minutes": 120},
+                "issue": {"idReadable": "APP-2"},
+            },
+        ],
+    ):
+        worklogs = tracker.get_worklogs(date(2026, 10, 1), date(2026, 10, 1))
+
+    assert [(w.date, w.hours, w.issue) for w in worklogs] == [
+        ("2026-10-01", 2.5, "APP-1"),
+        ("2026-10-01", 2.0, "APP-2"),
+    ]
+    assert all(w.source == "youtrack" for w in worklogs)
+
+
 def test_tracker_is_configured():
     assert YoutrackTracker(
         {"access_token": "token", "issue_id": "PROJ-1"}

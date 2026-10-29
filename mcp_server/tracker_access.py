@@ -6,7 +6,7 @@ def build_user_tracker(
     profile: UserProfile,
     kind: str,
     *,
-    issue_id: int | None = None,
+    issue_id: int | str | None = None,
     for_write: bool = False,
 ) -> BaseTracker:
     if kind not in ("redmine", "youtrack"):
@@ -18,12 +18,16 @@ def build_user_tracker(
     config = dict(getattr(profile, kind))
     required = {
         "redmine": ["api_key", "user_id", "activity_id"],
-        "youtrack": ["access_token", "issue_id"],
+        "youtrack": ["access_token"],
     }[kind]
     if for_write and kind == "redmine":
         if type(issue_id) is not int or issue_id <= 0:
             raise ProfileConfigError("Redmine write requires a valid issue ID")
         config["issue_id"] = issue_id
+    if for_write and kind == "youtrack":
+        if not isinstance(issue_id, str) or not issue_id.strip():
+            raise ProfileConfigError("YouTrack write requires a valid issue ID")
+        config["issue_id"] = issue_id.strip()
 
     credentials = ("api_key",) if kind == "redmine" else ("access_token",)
     missing = [
