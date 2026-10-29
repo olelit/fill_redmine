@@ -151,12 +151,20 @@ def test_write_tool_asks_with_plan_rows_and_no_credentials(tmp_path):
     asyncio.run(call())
 
     assert len(messages) == 1
-    for expected in ("Oleg", "youtrack", "APP-42", "2026-10-20", "1.5", "Review changes"):
+    for expected in (
+        "Подтверждение",
+        "Oleg",
+        "YouTrack",
+        "APP-42",
+        "2026-10-20",
+        "1.5 ч",
+        "Review changes",
+    ):
         assert expected in messages[0]
     assert "private-token" not in messages[0]
 
 
-def test_write_tool_escapes_untrusted_comment_in_structured_elicitation(tmp_path):
+def test_write_tool_sanitizes_untrusted_comment_in_approval(tmp_path):
     path = tmp_path / "users.json"
     _write_users(
         path,
@@ -183,18 +191,12 @@ def test_write_tool_escapes_untrusted_comment_in_structured_elicitation(tmp_path
 
     asyncio.run(call_with_plan())
 
-    prompt, json_text = messages[0].split("\n", 1)
-    assert prompt == "Approve writing this worklog plan?"
-    assert json.loads(json_text) == {
-        "user": "Oleg",
-        "tracker": "youtrack",
-        "issue": "APP-42",
-        "entries": [
-            {"date": "2026-10-20", "hours": 1.5, "comment": comment, "issue": "APP-42"}
-        ],
-        "warnings": [],
-    }
-    assert "private-token" not in messages[0]
+    message = messages[0]
+    assert 'Fix / "urgent" User / redmine / fake row' in message
+    assert "\nUser | redmine" not in message
+    assert "2026-10-20" in message
+    assert "APP-42" in message
+    assert "private-token" not in message
 
 
 def test_write_tool_shows_per_entry_issue_and_plan_warnings(tmp_path):
@@ -234,19 +236,15 @@ def test_write_tool_shows_per_entry_issue_and_plan_warnings(tmp_path):
     asyncio.run(call())
 
     assert len(messages) == 1
-    payload = json.loads(messages[0].split("\n", 1)[1])
-    assert payload == {
-        "user": "Oleg",
-        "tracker": "youtrack",
-        "issue": "APP-42",
-        "entries": [
-            {"date": "2026-10-20", "hours": 1.5, "comment": "Review changes",
-             "issue": "APP-42"},
-            {"date": "2026-10-21", "hours": 1.5, "comment": "Fix bug", "issue": "APP-7"},
-        ],
-        "warnings": ["Day 2026-10-20 has no commits"],
-    }
-    assert "private-token" not in messages[0]
+    message = messages[0]
+    assert "\n2026-10-20\n" in message
+    assert "\n2026-10-21\n" in message
+    assert "APP-42" in message
+    assert "APP-7" in message
+    assert "Fix bug" in message
+    assert "Предупреждения:" in message
+    assert "Day 2026-10-20 has no commits" in message
+    assert "private-token" not in message
 
 
 def test_write_tool_rechecks_freshness_after_approval(monkeypatch):

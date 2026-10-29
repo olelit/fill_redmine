@@ -7,7 +7,10 @@
         "command": [".venv/bin/python", "-m", "mcp_server"],
         "cwd": ".",
         "codemode": false,
-        "protocol": "legacy"
+        "protocol": "legacy",
+        "environment": {
+          "YOUTRACK_BASE_URL": "https://driv.youtrack.cloud"
+        }
       }
     }
   }

@@ -28,8 +28,9 @@ MCP-конфигурацию. Redmine-сценарии (Tasks 5–6 старог
   день, если он ещё не записан; строке daily meeting не нужны commit hashes.
 - `prepare_youtrack_fill` не делает POST и не вызывает AI. Запись — только
   через `write_plan` и обязательный elicitation.
-- Комментарии, часы и issue показываются в approval как структурированный
-  JSON; переводы строк и `|` в комментарии не должны spoof-ить строки.
+- Комментарии, часы и issue показываются в approval как читаемый текст,
+  сгруппированный по датам; переводы строк и `|` в комментариях заменяются,
+  чтобы не spoof-ить строки.
 - MCP-ответы и логи не содержат токены, API-ключи и authorization headers.
 - Коммиты проверяются через `GitClient` по профилю (`git_email`) и периоду;
   issue должен встречаться в subject/body хотя бы одного переданного коммита.
@@ -120,9 +121,11 @@ Commit: `feat: read and write YouTrack worklogs per issue`.
 - `PlannedEntry(date, hours, comment, commit_hashes, issue_id: str = "")`.
 - `PlanStore.create(...)` требует уникальности `(date, issue_id or plan.issue_id)`;
   две строки за одну дату с разными issue разрешены.
-- `write_plan` approval message — тот же JSON-формат, что уже есть, плюс:
-  - у каждой entry поле `issue`: `entry.issue_id or plan.issue_id`;
-  - поле `warnings` со списком warnings плана;
+- `write_plan` approval message — читаемый текст, сгруппированный по датам:
+  - заголовок, пользователь, трекер, число строк и сумма часов;
+  - каждая строка: часы, issue (`entry.issue_id or plan.issue_id`), комментарий;
+  - блок warnings;
+  - переводы строк и `|` в комментариях заменяются, чтобы не spoof-ить строки;
   - никаких токенов.
 - `execute_plan(plan, users_path)`:
   - Redmine: как раньше, один issue на план, records с `issue=plan.issue_id`;
@@ -137,7 +140,7 @@ Commit: `feat: read and write YouTrack worklogs per issue`.
 В `tests/test_mcp_write_tools.py`:
 - `PlanStore` принимает две строки одной даты с разными issue и отвергает
   дубль `(date, issue)`;
-- approval JSON содержит issue каждой строки и warnings, не содержит токен;
+- approval-текст содержит issue каждой строки и warnings, не содержит токен;
 - writer для двух issue вызывает два tracker'а, возвращает статусы по каждой
   строке; падение одного не отменяет второй;
 - Redmine-план продолжает работать;
@@ -153,7 +156,8 @@ Expected: новые тесты падают.
 - [ ] **Step 3: Implement**
 
 В `plans.py` — новое поле и проверка уникальности.
-В `write_tools.py` — JSON payload с issue и warnings.
+В `write_tools.py` — читаемый текст с issue и warnings и санитайзингом
+пользовательских комментариев.
 В `writer.py` — группировка YouTrack по issue, `build_user_tracker(...,
 issue_id=issue, for_write=True)`, per-group ошибки.
 
