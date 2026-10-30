@@ -16,6 +16,8 @@ from mcp_server.config import (
     load_users,
     select_user,
 )
+from mcp_server.periods import default_period as _default_period
+from mcp_server.periods import parse_period as _period
 from mcp_server.plans import PlanStore, PlannedEntry, fingerprint_target_config
 from mcp_server.tracker_access import build_user_tracker
 
@@ -386,29 +388,3 @@ def _existing_hours_by_date(worklogs: list[WorklogDTO]) -> dict[str, float]:
 
 def _normalize_issue(raw: object) -> str:
     return raw.strip().upper() if isinstance(raw, str) else ""
-
-
-def _default_period(today: date) -> tuple[date, date]:
-    return today.replace(day=1), today
-
-
-def _period(start: str | None, end: str | None) -> tuple[date, date]:
-    today = date.today()
-    default_start, default_end = _default_period(today)
-    start_date = _period_date(start) if start is not None else default_start
-    end_date = _period_date(end) if end is not None else default_end
-    if start_date > end_date:
-        raise YoutrackFillError("Start date must not be after end date")
-    return start_date, end_date
-
-
-def _period_date(raw: str) -> date:
-    try:
-        value = date.fromisoformat(raw)
-    except (TypeError, ValueError):
-        raise YoutrackFillError(
-            "Dates must use YYYY-MM-DD ISO format"
-        ) from None
-    if value.isoformat() != raw:
-        raise YoutrackFillError("Dates must use YYYY-MM-DD ISO format")
-    return value

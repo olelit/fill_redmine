@@ -93,6 +93,7 @@ def test_server_exposes_task_tools_without_prompts_or_resources(tmp_path):
         "get_worklogs",
         "get_git_commits",
         "prepare_youtrack_fill",
+        "prepare_youtrack_transfer",
         "write_plan",
     ]
     assert prompts.prompts == []
