@@ -349,6 +349,7 @@ def test_server_registers_read_tools_and_write_gate(tmp_path):
         "get_worklogs",
         "get_git_commits",
         "prepare_youtrack_fill",
+        "prepare_youtrack_from_commits",
         "prepare_youtrack_transfer",
         "write_plan",
     ]
