@@ -41,6 +41,30 @@ class RedmineClient:
 
         return entries
 
+    def delete_time_entries(
+        self, entry_ids: list[int]
+    ) -> list[tuple[int, str]]:
+        url = f"{self.base_url}/time_entries"
+        headers = {"X-Redmine-API-Key": self.api_key}
+        errors: list[tuple[int, str]] = []
+        for entry_id in entry_ids:
+            try:
+                response = requests.delete(
+                    f"{url}/{entry_id}.json",
+                    headers=headers,
+                    timeout=10,
+                )
+            except requests.RequestException as exc:
+                errors.append((entry_id, str(exc)))
+                continue
+
+            if 200 <= response.status_code < 300 or response.status_code == 404:
+                continue
+            errors.append(
+                (entry_id, f"{response.status_code} {response.text[:200]}")
+            )
+        return errors
+
     def create_time_entries_sync(
         self,
         user_id: int,

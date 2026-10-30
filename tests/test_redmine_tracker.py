@@ -198,3 +198,88 @@ def test_create_worklogs_truncates_long_http_error():
         )
 
     assert errors == [("2026-10-27", "500 " + "x" * 200)]
+
+
+def test_tracker_exposes_raw_time_entries_with_user_id():
+    tracker = RedmineTracker(
+        {"api_key": "key", "user_id": 16, "activity_id": 9, "issue_id": 2682}
+    )
+    raw = [{"id": 901, "spent_on": "2026-10-01", "hours": 8.0}]
+
+    with patch.object(
+        RedmineClient, "get_time_entries", return_value=raw
+    ) as mock_get:
+        entries = tracker.get_time_entries(
+            date(2026, 10, 1), date(2026, 10, 2)
+        )
+
+    assert entries == raw
+    mock_get.assert_called_once_with(
+        user_id=16, start=date(2026, 10, 1), end=date(2026, 10, 2)
+    )
+
+
+def test_delete_time_entries_treats_404_as_success():
+    deleted = MagicMock()
+    deleted.status_code = 204
+    deleted.text = ""
+    missing = MagicMock()
+    missing.status_code = 404
+    missing.text = ""
+
+    with patch(
+        "clients.redmine_client.Config.get_redmine_base_url",
+        return_value="http://redmine",
+    ), patch(
+        "clients.redmine_client.requests.delete",
+        side_effect=[deleted, missing],
+    ) as mock_delete:
+        errors = RedmineClient("key").delete_time_entries([901, 902])
+
+    assert errors == []
+    assert mock_delete.call_count == 2
+    assert mock_delete.call_args_list[0].args[0] == (
+        "http://redmine/time_entries/901.json"
+    )
+    assert mock_delete.call_args_list[0].kwargs["headers"] == {
+        "X-Redmine-API-Key": "key"
+    }
+
+
+def test_delete_time_entries_reports_errors_and_continues():
+    forbidden = MagicMock()
+    forbidden.status_code = 403
+    forbidden.text = "denied"
+    deleted = MagicMock()
+    deleted.status_code = 204
+    deleted.text = ""
+
+    with patch(
+        "clients.redmine_client.Config.get_redmine_base_url",
+        return_value="http://redmine",
+    ), patch(
+        "clients.redmine_client.requests.delete",
+        side_effect=[
+            forbidden,
+            requests.ConnectionError("boom"),
+            deleted,
+        ],
+    ) as mock_delete:
+        errors = RedmineClient("key").delete_time_entries([1, 2, 3])
+
+    assert errors == [(1, "403 denied"), (2, "boom")]
+    assert mock_delete.call_count == 3
+
+
+def test_tracker_deletes_time_entries():
+    tracker = RedmineTracker(
+        {"api_key": "key", "user_id": 16, "activity_id": 9, "issue_id": 2682}
+    )
+
+    with patch.object(
+        RedmineClient, "delete_time_entries", return_value=[(2, "boom")]
+    ) as mock_delete:
+        errors = tracker.delete_time_entries([1, 2])
+
+    assert errors == [(2, "boom")]
+    mock_delete.assert_called_once_with([1, 2])

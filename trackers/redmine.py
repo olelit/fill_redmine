@@ -18,15 +18,17 @@ class RedmineTracker(BaseTracker):
         TrackerField("issue_id", "issue_id", kind="int"),
     )
 
-    def get_worklogs(self, start: date, end: date) -> list[WorklogDTO]:
+    def get_time_entries(self, start: date, end: date) -> list[dict]:
         client = RedmineClient(api_key=self.config["api_key"])
-        entries = client.get_time_entries(
+        return client.get_time_entries(
             user_id=int(self.config["user_id"]),
             start=start,
             end=end,
         )
+
+    def get_worklogs(self, start: date, end: date) -> list[WorklogDTO]:
         result: list[WorklogDTO] = []
-        for entry in entries:
+        for entry in self.get_time_entries(start, end):
             issue = entry.get("issue") or {}
             result.append(
                 WorklogDTO(
@@ -38,6 +40,12 @@ class RedmineTracker(BaseTracker):
                 )
             )
         return result
+
+    def delete_time_entries(
+        self, entry_ids: list[int]
+    ) -> list[tuple[int, str]]:
+        client = RedmineClient(api_key=self.config["api_key"])
+        return client.delete_time_entries(entry_ids)
 
     def create_worklogs(self, records: list[WorklogDTO]) -> list[tuple[str, str]]:
         client = RedmineClient(api_key=self.config["api_key"])
