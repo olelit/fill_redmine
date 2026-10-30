@@ -7,8 +7,9 @@ from dto.git_commit_dto import GitCommitDTO
 
 DEFAULT_WORKDAY_START: time = time(9, 0)
 DEFAULT_COMMENT = "development"
-ISSUE_PATTERN = re.compile(
-    r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]+-\d+)(?![A-Za-z0-9])",
+ISSUE_PATTERN = re.compile(r"(?<![A-Za-z0-9])([A-Z][A-Z0-9]+-\d+)(?![A-Za-z0-9])")
+ISSUE_PATTERN_ANY_CASE = re.compile(
+    r"(?<![A-Za-z0-9])([A-Za-z][A-Za-z0-9]+-\d+)(?![A-Za-z0-9])",
     re.IGNORECASE,
 )
 COMMENT_LIMIT = 255
@@ -34,10 +35,20 @@ class AllocationResult:
     warnings: tuple[str, ...]
 
 
-def find_issue_ids(text: str) -> tuple[str, ...]:
+def find_issue_ids(
+    text: str, project_keys: tuple[str, ...] = ()
+) -> tuple[str, ...]:
     found: dict[str, None] = {}
-    for match in ISSUE_PATTERN.finditer(text):
-        found.setdefault(match.group(1).upper(), None)
+    keys = {key.upper() for key in project_keys}
+    if not keys:
+        for match in ISSUE_PATTERN.finditer(text):
+            found.setdefault(match.group(1), None)
+        return tuple(found)
+    for match in ISSUE_PATTERN_ANY_CASE.finditer(text):
+        raw = match.group(1)
+        issue = raw.upper()
+        if raw == issue or issue.split("-", 1)[0] in keys:
+            found.setdefault(issue, None)
     return tuple(found)
 
 
@@ -49,6 +60,7 @@ def allocate_commit_hours(
     workday_start: time = DEFAULT_WORKDAY_START,
     fallback_issue: str | None = None,
     fallback_comment: str = DEFAULT_COMMENT,
+    project_keys: tuple[str, ...] = (),
 ) -> AllocationResult:
     warnings: list[str] = []
     target_hours = float(hours)
@@ -62,7 +74,7 @@ def allocate_commit_hours(
         return AllocationResult((), tuple(warnings))
 
     weights, hashes, comments = _accumulate(
-        timed, day, workday_start, fallback_issue, warnings
+        timed, day, workday_start, fallback_issue, project_keys, warnings
     )
     if not weights:
         return AllocationResult((), tuple(warnings))
@@ -122,6 +134,7 @@ def _accumulate(
     day: date,
     workday_start: time,
     fallback_issue: str | None,
+    project_keys: tuple[str, ...],
     warnings: list[str],
 ) -> tuple[dict[str, float], dict[str, tuple[str, ...]], dict[str, str]]:
     weights: dict[str, float] = {}
@@ -134,13 +147,15 @@ def _accumulate(
         weight = max(1.0, commit_minutes - cursor)
         cursor = max(cursor, commit_minutes)
 
-        issues = find_issue_ids(f"{item.subject}\n{item.body}")
+        issues = find_issue_ids(
+            f"{item.subject}\n{item.body}", project_keys=project_keys
+        )
         if not issues:
             fallback = _fallback(fallback_issue)
             if fallback is None:
                 warnings.append(
                     f"{day.isoformat()}: commit {item.hash} has no issue "
-                    f"reference; skipped"
+                    f"reference; its interval was redistributed"
                 )
                 continue
             issues = (fallback,)

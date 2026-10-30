@@ -31,13 +31,41 @@ def by_issue(result):
 def test_find_issue_ids_is_case_insensitive_and_deduped():
     text = "fix abc-12 and ABC-12, also DRIVEO-7\nrefs XYZ-99"
 
-    assert find_issue_ids(text) == ("ABC-12", "DRIVEO-7", "XYZ-99")
+    assert find_issue_ids(text, project_keys=("ABC", "DRIVEO", "XYZ")) == (
+        "ABC-12",
+        "DRIVEO-7",
+        "XYZ-99",
+    )
+
+
+def test_find_issue_ids_matches_uppercase_only_by_default():
+    assert find_issue_ids("fix abc-12 and DRIVEO-7") == ("DRIVEO-7",)
+
+
+def test_find_issue_ids_ignores_technical_tokens():
+    assert find_issue_ids("fix utf-8 and sha-256") == ()
+
+
+def test_find_issue_ids_ignores_technical_tokens_with_project_keys():
+    assert find_issue_ids("fix utf-8 and sha-256", project_keys=("DRIVEO",)) == ()
+
+
+def test_find_issue_ids_accepts_case_insensitive_with_project_keys():
+    assert find_issue_ids("fix driveo-7", project_keys=("DRIVEO",)) == (
+        "DRIVEO-7",
+    )
+
+
+def test_find_issue_ids_keeps_uppercase_tags_outside_project_keys():
+    assert find_issue_ids("PROJ-42 work", project_keys=("DRIVEO",)) == (
+        "PROJ-42",
+    )
 
 
 def test_find_issue_ids_ignores_longer_tokens():
     text = "1ABC-3 and ABC-1a and seeABC-1x and ok PRJ-5, then abc-7."
 
-    assert find_issue_ids(text) == ("PRJ-5", "ABC-7")
+    assert find_issue_ids(text, project_keys=("ABC", "PRJ")) == ("PRJ-5", "ABC-7")
 
 
 def test_default_workday_start_is_nine():
@@ -219,3 +247,4 @@ def test_skipped_commit_without_issue_reports_warning():
 
     assert by_issue(result) == {"DRIVEO-1": 8.0}
     assert any("b1" in warning for warning in result.warnings)
+    assert any("redistributed" in warning for warning in result.warnings)

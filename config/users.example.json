@@ -12,6 +12,7 @@
       },
       "youtrack": {
         "access_token": "",
+        "project_keys": [],
         "issue_id": "",
         "daily_meeting_issue_id": "",
         "daily_meeting_hours": 1.0,

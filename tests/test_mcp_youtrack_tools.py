@@ -296,6 +296,46 @@ def test_prepare_accepts_daily_meeting_with_default_hours(tmp_path, monkeypatch)
     assert data["warnings"] == []
 
 
+def test_prepare_rejects_fractional_daily_meeting_hours(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "users.json"
+    _write_users(
+        path,
+        [
+            _user(
+                daily_meeting_issue_id=DAILY_ISSUE,
+                daily_meeting_hours=0.7,
+            )
+        ],
+    )
+    writes = _install_fakes(
+        monkeypatch,
+        [_commit("h1", "2026-10-20", "DRIVEO-1 implement")],
+    )
+
+    error = _error(
+        _call(
+            path,
+            PlanStore(),
+            [
+                _entry(
+                    issue=DAILY_ISSUE,
+                    hours=1.0,
+                    comment="Daily meeting",
+                    hashes=[],
+                )
+            ],
+            start="2026-10-20",
+            end="2026-10-20",
+        )
+    )
+
+    assert "multiple of 0.5" in error
+    assert SECRET not in error
+    assert writes == []
+
+
 def test_prepare_accepts_fallback_issue_without_commits(tmp_path, monkeypatch):
     path = tmp_path / "users.json"
     _write_users(path, [_user(issue_id="DRIVEO-5062")])

@@ -340,6 +340,11 @@ def _daily_meeting_config(
     daily_hours = float(raw_hours)
     if not math.isfinite(daily_hours) or daily_hours <= 0:
         raise ProfileConfigError("Daily meeting hours are invalid")
+    doubled = daily_hours * 2
+    if abs(doubled - round(doubled)) > HOURS_TOLERANCE:
+        raise ProfileConfigError(
+            "Daily meeting hours must be a multiple of 0.5"
+        )
     return daily_issue, daily_hours
 
 

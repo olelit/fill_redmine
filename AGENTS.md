@@ -164,12 +164,21 @@ Commit-based tracking rules:
   коммитам", a day or period derived from git history) MUST use
   `prepare_youtrack_from_commits`. Never allocate hours to issues manually and
   never call `prepare_youtrack_fill` for that.
-- "Today" means no `start`/`end`; the tool defaults to today only.
+- "Today" means no `start`/`end`; `start` alone means that date through today,
+  `end` alone means that single day, and a future `end` is rejected.
 - Default target is `daily_hours=8.0` per day; pass a smaller positive value
   only when the user asks for fewer hours.
 - Hours are allocated proportionally to intervals between commit times, starting
   at `youtrack.workday_start` (default `09:00`). Existing YouTrack hours are
-  subtracted from the target; the daily meeting is added automatically.
+  subtracted from the target; a fractional remainder is floored to `0.5` h with
+  a warning, and the daily meeting is added automatically.
+- Issue tags are read from commit subject/body. Uppercase tags from any project
+  (`PROJ-42`) are always recognized. `youtrack.project_keys` is an optional list
+  of uppercase project prefixes (for example `["DRIVEO"]`, not `driveo`) that
+  additionally enables case-insensitive recognition (`driveo-123` →
+  `DRIVEO-123`) for those prefixes only; prefixes from `youtrack.issue_id` and
+  `youtrack.daily_meeting_issue_id` are added automatically. Without any prefix,
+  only uppercase tags are recognized.
 - No commits or no issue tags fall back to `youtrack.issue_id` with
   `youtrack.default_comment` (default `development`).
 - The tool never writes; writing still requires `write_plan` approval.

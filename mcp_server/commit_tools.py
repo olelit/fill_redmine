@@ -36,6 +36,7 @@ from mcp_server.youtrack_tools import (
 
 DEFAULT_DAILY_HOURS = 8.0
 WORKDAY_START_PATTERN = re.compile(r"(\d{1,2}):(\d{2})")
+PROJECT_KEY_PATTERN = re.compile(r"[A-Z][A-Z0-9]+")
 
 TOOL_DESCRIPTION = (
     "Готовит план списания времени в YouTrack по git-коммитам профиля. "
@@ -100,6 +101,7 @@ def _prepare_youtrack_from_commits(
     fallback_issue = _fallback_issue(profile)
     default_comment = _default_comment(profile)
     workday_start = _workday_start(profile)
+    project_keys = _project_keys(profile, daily_issue, fallback_issue)
 
     tracker = build_user_tracker(profile, "youtrack")
     worklogs = tracker.get_worklogs(start_date, end_date)
@@ -127,6 +129,7 @@ def _prepare_youtrack_from_commits(
         default_comment,
         workday_start,
         target_hours,
+        project_keys,
     )
     merged = _merge_entries(entries)
     if not merged:
@@ -175,6 +178,7 @@ def _plan_days(
     default_comment: str,
     workday_start: time,
     target_hours: float,
+    project_keys: tuple[str, ...],
 ) -> tuple[list[PlannedEntry], list[str]]:
     entries: list[PlannedEntry] = []
     warnings: list[str] = []
@@ -234,6 +238,7 @@ def _plan_days(
                     fallback_issue,
                     default_comment,
                     warnings,
+                    project_keys,
                 )
             )
         else:
@@ -264,6 +269,7 @@ def _entries_from_commits(
     fallback_issue: str | None,
     default_comment: str,
     warnings: list[str],
+    project_keys: tuple[str, ...],
 ) -> list[PlannedEntry]:
     result = allocate_commit_hours(
         day_commits,
@@ -272,6 +278,7 @@ def _entries_from_commits(
         workday_start=workday_start,
         fallback_issue=fallback_issue,
         fallback_comment=default_comment,
+        project_keys=project_keys,
     )
     warnings.extend(result.warnings)
     if result.allocations:
@@ -374,11 +381,17 @@ def _commits_by_date(
 
 
 def _period(start: str | None, end: str | None) -> tuple[date, date]:
-    today = date.today().isoformat()
-    return parse_period(
-        start if start is not None else today,
-        end if end is not None else today,
-    )
+    today = date.today()
+    if start is None and end is not None:
+        start_date, end_date = parse_period(end, end)
+    else:
+        start_date, end_date = parse_period(
+            start if start is not None else today.isoformat(),
+            end if end is not None else today.isoformat(),
+        )
+    if end_date > today:
+        raise PeriodError("End date must not be in the future")
+    return start_date, end_date
 
 
 def _target_hours(raw: float) -> float:
@@ -409,6 +422,30 @@ def _workday_start(profile: UserProfile) -> time:
     if hour > 23 or minute > 59:
         raise ProfileConfigError("Workday start must use HH:MM format")
     return time(hour, minute)
+
+
+def _project_keys(
+    profile: UserProfile, *issues: str | None
+) -> tuple[str, ...]:
+    keys: dict[str, None] = {}
+    for issue in issues:
+        if issue:
+            keys.setdefault(issue.split("-", 1)[0], None)
+    raw = profile.youtrack.get("project_keys")
+    if raw is not None:
+        if not isinstance(raw, list):
+            raise ProfileConfigError(
+                "Project keys must be a list of uppercase prefixes"
+            )
+        for item in raw:
+            if not isinstance(item, str) or not PROJECT_KEY_PATTERN.fullmatch(
+                item.strip()
+            ):
+                raise ProfileConfigError(
+                    "Project keys must be a list of uppercase prefixes"
+                )
+            keys.setdefault(item.strip(), None)
+    return tuple(keys)
 
 
 def _default_comment(profile: UserProfile) -> str:

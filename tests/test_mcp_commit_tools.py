@@ -7,6 +7,7 @@ import pytest
 from mcp import types
 from mcp.client import Client
 
+from clients.git_client import GitError
 from dto.git_commit_dto import GitCommitDTO
 from dto.worklog_dto import WorklogDTO
 from mcp_server.app import create_server
@@ -50,18 +51,22 @@ def _commit(
     )
 
 
-def _install_fakes(monkeypatch, commits, worklogs=()):
+def _install_fakes(monkeypatch, commits, worklogs=(), periods=None):
     writes: list[object] = []
+    if periods is None:
+        periods = {}
 
     class FakeGitClient:
         def __init__(self, repo_path: str):
             self.repo_path = repo_path
 
         def list_commits(self, email, start, end):
+            periods["commits"] = (start, end)
             return list(commits)
 
     class FakeTracker:
         def get_worklogs(self, start, end):
+            periods["worklogs"] = (start, end)
             return list(worklogs)
 
         def create_worklogs(self, records):
@@ -219,6 +224,7 @@ def test_prepare_uses_fallback_when_no_commits(tmp_path, monkeypatch):
 def test_prepare_explicit_period_tracks_each_day(tmp_path, monkeypatch):
     path = tmp_path / "users.json"
     _write_users(path, [_user(issue_id="DRIVEO-5062")])
+    periods: dict[str, tuple[str, str]] = {}
     _install_fakes(
         monkeypatch,
         [
@@ -226,12 +232,21 @@ def test_prepare_explicit_period_tracks_each_day(tmp_path, monkeypatch):
             _commit("h2", "2026-10-19", "DRIVEO-1 start"),
             _commit("h3", NEXT_DAY, "DRIVEO-2 review"),
         ],
+        periods=periods,
     )
     store = PlanStore()
 
     data = _ok(_call(path, store, start="2026-10-19", end=NEXT_DAY))
 
     assert data["period"] == {"start": "2026-10-19", "end": NEXT_DAY}
+    assert periods["worklogs"] == (
+        date(2026, 10, 19),
+        date(2026, 10, 21),
+    )
+    assert periods["commits"] == (
+        date(2026, 10, 19),
+        date(2026, 10, 21),
+    )
     assert data["daily_hours"] == 8.0
     assert _hours_by_date(data) == {
         "2026-10-19": 8.0,
@@ -387,9 +402,27 @@ def test_prepare_one_sided_period(tmp_path, monkeypatch):
     _install_fakes(
         monkeypatch, [_commit("h1", past, "DRIVEO-1 implement")]
     )
-    error = _error(_call(path, PlanStore(), end=past))
+    end_only = _ok(_call(path, PlanStore(), end=past))
 
-    assert "Start date must not be after end date" in error
+    assert end_only["period"] == {"start": past, "end": past}
+    assert _hours_by_date(end_only) == {past: 8.0}
+    assert end_only["entries"][0]["issue"] == "DRIVEO-1"
+
+
+def test_prepare_rejects_future_end(tmp_path, monkeypatch):
+    path = tmp_path / "users.json"
+    _write_users(path, [_user()])
+    writes = _install_fakes(monkeypatch, [])
+    today = date.today()
+    tomorrow = (today + timedelta(days=1)).isoformat()
+
+    error = _error(
+        _call(path, PlanStore(), start=today.isoformat(), end=tomorrow)
+    )
+
+    assert "future" in error.lower()
+    assert SECRET not in error
+    assert writes == []
 
 
 @pytest.mark.parametrize("daily_hours", [0, -1, 9, float("nan")])
@@ -436,6 +469,135 @@ def test_prepare_rejects_no_commits_without_fallback(tmp_path, monkeypatch):
 
     assert "no commits" in error.lower()
     assert "fallback" in error.lower()
+    assert SECRET not in error
+    assert writes == []
+
+
+def test_prepare_rejects_commits_without_issue_and_fallback(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "users.json"
+    _write_users(path, [_user()])
+    writes = _install_fakes(
+        monkeypatch, [_commit("h1", DAY, "fix utf-8 encoding")]
+    )
+
+    error = _error(_call(path, PlanStore(), start=DAY, end=DAY))
+
+    assert "no issue" in error.lower()
+    assert SECRET not in error
+    assert writes == []
+
+
+def test_prepare_falls_back_for_technical_tokens(tmp_path, monkeypatch):
+    path = tmp_path / "users.json"
+    _write_users(path, [_user(issue_id="DRIVEO-5062")])
+    _install_fakes(
+        monkeypatch, [_commit("h1", DAY, "fix utf-8 encoding")]
+    )
+
+    data = _ok(_call(path, PlanStore(), start=DAY, end=DAY))
+
+    assert data["entries"] == [
+        {
+            "date": DAY,
+            "issue": "DRIVEO-5062",
+            "hours": 8.0,
+            "comment": "fix utf-8 encoding",
+            "commit_hashes": ["h1"],
+        }
+    ]
+    assert "UTF-8" not in json.dumps(data)
+
+
+def test_prepare_keeps_uppercase_tags_outside_project_keys(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "users.json"
+    _write_users(path, [_user(issue_id="DRIVEO-5062")])
+    _install_fakes(monkeypatch, [_commit("h1", DAY, "PROJ-42 work")])
+
+    data = _ok(_call(path, PlanStore(), start=DAY, end=DAY))
+
+    assert data["entries"] == [
+        {
+            "date": DAY,
+            "issue": "PROJ-42",
+            "hours": 8.0,
+            "comment": "PROJ-42 work",
+            "commit_hashes": ["h1"],
+        }
+    ]
+    assert "DRIVEO-5062" not in json.dumps(data)
+
+
+def test_prepare_reads_commits_case_insensitively_for_known_projects(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "users.json"
+    _write_users(path, [_user(project_keys=["DRIVEO"])])
+    _install_fakes(monkeypatch, [_commit("h1", DAY, "fix driveo-1 thing")])
+
+    data = _ok(_call(path, PlanStore(), start=DAY, end=DAY))
+
+    assert data["entries"][0]["issue"] == "DRIVEO-1"
+
+
+def test_prepare_reports_git_failure(tmp_path, monkeypatch):
+    path = tmp_path / "users.json"
+    _write_users(path, [_user()])
+    writes = _install_fakes(monkeypatch, [])
+
+    class FailingGitClient:
+        def __init__(self, repo_path: str):
+            self.repo_path = repo_path
+
+        def list_commits(self, email, start, end):
+            raise GitError("boom")
+
+    monkeypatch.setattr("mcp_server.commit_tools.GitClient", FailingGitClient)
+
+    error = _error(_call(path, PlanStore(), start=DAY, end=DAY))
+
+    assert "Git commit read failed" in error
+    assert "boom" not in error
+    assert SECRET not in error
+    assert writes == []
+
+
+@pytest.mark.parametrize("project_keys", ["DRIVEO", ["driveo"], [""], [1]])
+def test_prepare_rejects_invalid_project_keys(
+    tmp_path, monkeypatch, project_keys
+):
+    path = tmp_path / "users.json"
+    _write_users(path, [_user(project_keys=project_keys)])
+    writes = _install_fakes(monkeypatch, [_commit("h1", DAY, "DRIVEO-1 work")])
+
+    error = _error(_call(path, PlanStore(), start=DAY, end=DAY))
+
+    assert "Project keys" in error
+    assert SECRET not in error
+    assert writes == []
+
+
+def test_prepare_rejects_fractional_daily_meeting_hours(tmp_path, monkeypatch):
+    path = tmp_path / "users.json"
+    _write_users(
+        path,
+        [
+            _user(
+                daily_meeting_issue_id=DAILY_ISSUE,
+                daily_meeting_hours=0.7,
+            )
+        ],
+    )
+    writes = _install_fakes(
+        monkeypatch, [_commit("h1", DAY, "DRIVEO-1 implement")]
+    )
+
+    error = _error(_call(path, PlanStore(), start=DAY, end=DAY))
+
+    assert "multiple of 0.5" in error
     assert SECRET not in error
     assert writes == []
 

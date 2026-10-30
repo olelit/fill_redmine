@@ -25,6 +25,9 @@ chmod 600 config/users.json
 - `redmine.api_key`, `redmine.user_id`, `redmine.activity_id`,
   `redmine.comment`;
 - `youtrack.access_token`;
+- `youtrack.project_keys` — необязательный список префиксов проектов в верхнем
+  регистре, например `["DRIVEO"]`; добавляет распознавание этих проектов в
+  любом регистре (теги в верхнем регистре распознаются всегда);
 - `youtrack.issue_id` — fallback issue для дозаполнения YouTrack;
 - `youtrack.daily_meeting_issue_id`, `youtrack.daily_meeting_hours`;
 - `youtrack.workday_start` — начало рабочего дня, по умолчанию `09:00`;
@@ -84,9 +87,9 @@ opencode mcp list   # work-assistant connected
 подтверждения и выполняется только при явном `approved`. План одноразовый и
 устаревает через 10 минут.
 
-Период по умолчанию — с 1-го числа текущего месяца по сегодня.
-
 ### YouTrack fill
+
+Период по умолчанию — с 1-го числа текущего месяца по сегодня.
 
 Issue задаётся на уровне строки плана: `DRIVEO-XXXX` берётся из тега в
 subject/body коммита. Daily meeting использует
@@ -99,12 +102,14 @@ subject/body коммита. Daily meeting использует
 
 `prepare_youtrack_from_commits(user_name, repo_path, start, end, daily_hours)`
 строит план YouTrack из git-коммитов. Без `start` и `end` берётся только
-сегодня; `daily_hours` по умолчанию `8.0` и должен быть положительным, не
-больше 8.
+сегодня; период односторонний: только `start` — с этой даты по сегодня, только
+`end` — ровно этот день. `end` в будущем отклоняется. `daily_hours` по
+умолчанию `8.0` и должен быть положительным, не больше 8.
 
 Для каждого дня:
 
 1. Из целевых часов вычитаются уже записанные за этот день часы YouTrack.
+   Дробный остаток округляется вниз до кратного `0.5` с warning.
 2. Daily meeting добавляется отдельной записью, если он настроен, день рабочий
    и ещё не записан; его часы вычитаются из остатка.
 3. Остаток распределяется по issue из subject/body коммитов пропорционально
@@ -116,10 +121,20 @@ subject/body коммита. Daily meeting использует
 5. Если коммитов нет или в них нет issue, используется `youtrack.issue_id` с
    комментарием `youtrack.default_comment`.
 
+`youtrack.project_keys` — необязательный список префиксов проектов, например
+`["DRIVEO"]`; только заглавные буквы (`DRIVEO`, не `driveo`). Тег issue в
+верхнем регистре (`PROJ-42`) распознаётся всегда, для любого проекта, даже
+если его префикса нет в списке. Префиксы из `youtrack.project_keys`,
+`youtrack.issue_id` и `youtrack.daily_meeting_issue_id` дополнительно
+включают распознавание этих проектов в любом регистре (`driveo-123` →
+`DRIVEO-123`). Без `project_keys` распознаются только теги в верхнем регистре.
+
 `prepare_*` ничего не пишет: запись выполняется только через `write_plan` после
 подтверждения.
 
 ### Перенос YouTrack → Redmine
+
+Период по умолчанию — с 1-го числа текущего месяца по сегодня.
 
 `prepare_youtrack_transfer(user_name, issue_id, start, end)` читает worklog'и
 YouTrack, суммирует часы по датам и готовит одну запись Redmine на дату в
