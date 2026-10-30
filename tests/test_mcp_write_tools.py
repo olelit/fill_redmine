@@ -706,11 +706,11 @@ def test_writer_refuses_changed_target_config_before_building_tracker(tmp_path, 
             writes.append(records)
             return []
 
-    def build_tracker(*args, **kwargs):
+    def fake_build_user_tracker(*args, **kwargs):
         writes.append("built")
         return FakeTracker()
 
-    monkeypatch.setattr("mcp_server.writer.build_user_tracker", build_tracker)
+    monkeypatch.setattr("mcp_server.writer.build_user_tracker", fake_build_user_tracker)
 
     with pytest.raises(ProfileConfigError, match="changed since plan creation"):
         execute_plan(plan, path)

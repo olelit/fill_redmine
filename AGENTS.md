@@ -169,7 +169,7 @@ YouTrack fill rules:
 YouTrack → Redmine transfer rules:
 
 - `prepare_youtrack_transfer` accepts a required positive Redmine `issue_id`;
-  the ID is never read from JSON or SQLite.
+  the ID is never read from JSON.
 - Period defaults to the 1st of the current month through today.
 - Worklogs are summed per date; one Redmine entry is created per date.
 - The Redmine comment is exactly `redmine.comment`; source issue IDs are never

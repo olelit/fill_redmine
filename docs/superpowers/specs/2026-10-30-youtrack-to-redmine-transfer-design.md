@@ -89,7 +89,7 @@ write_plan(plan_id)
 2. Профиль должен быть включён и содержать рабочие `youtrack` и `redmine`
    конфиги. `redmine.comment` обязателен.
 3. `issue_id` проверяется как положительное целое. Значение из
-   `config/users.json` или SQLite не используется.
+   `config/users.json` не используется.
 4. YouTrack worklog'и группируются по дате. Часы суммируются; записи с
    неположительными или нечисловыми часами считаются ошибкой данных.
 5. Если за период нет ни одного worklog'а YouTrack — ошибка, план не создаётся.
@@ -180,4 +180,4 @@ PlannedDeletion(date, entry_id, hours)
 - Автодозаполнение Redmine до 8 часов (`prepare_redmine_autofill`).
 - Перенос Redmine → YouTrack.
 - Изменения GUI.
-- Хранение Redmine issue ID в JSON/SQLite.
+- Хранение Redmine issue ID в JSON.
