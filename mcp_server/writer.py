@@ -25,9 +25,31 @@ def _execute_redmine(plan: WritePlan, profile: UserProfile) -> dict[str, object]
         issue_id=_redmine_issue_id(plan.issue_id),
         for_write=True,
     )
-    records = [_record(plan, entry, plan.issue_id) for entry in plan.entries]
-    failures = tracker.create_worklogs(records)
-    failed_dates = {entry_date for entry_date, _message in failures}
+    failed_dates: set[str] = set()
+    if plan.deletions:
+        deletion_errors = tracker.delete_time_entries(
+            [deletion.entry_id for deletion in plan.deletions]
+        )
+        failed_ids = {
+            entry_id for entry_id, _message in deletion_errors
+        }
+        failed_dates.update(
+            deletion.date
+            for deletion in plan.deletions
+            if deletion.entry_id in failed_ids
+        )
+
+    records = [
+        _record(plan, entry, plan.issue_id)
+        for entry in plan.entries
+        if entry.date not in failed_dates
+    ]
+    if records:
+        failures = tracker.create_worklogs(records)
+        failed_dates.update(
+            entry_date for entry_date, _message in failures
+        )
+
     return {
         "results": [
             {

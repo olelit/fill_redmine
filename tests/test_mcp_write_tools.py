@@ -13,6 +13,7 @@ from mcp_server.plans import (
     PLAN_TTL_SECONDS,
     PlanError,
     PlanStore,
+    PlannedDeletion,
     PlannedEntry,
     fingerprint_target_config,
 )
@@ -34,8 +35,29 @@ def _write_users(path: Path, users: list[dict[str, object]]) -> None:
     path.write_text(json.dumps({"users": users}), encoding="utf-8")
 
 
-def _create_plan(store, user_name, kind, issue_id, entries, warnings, fingerprint="test"):
-    return store.create(user_name, kind, issue_id, entries, warnings, fingerprint)
+def _deletion(day="2026-10-20", entry_id=901, hours=1.5):
+    return PlannedDeletion(date=day, entry_id=entry_id, hours=hours)
+
+
+def _create_plan(
+    store,
+    user_name,
+    kind,
+    issue_id,
+    entries,
+    warnings,
+    fingerprint="test",
+    deletions=(),
+):
+    return store.create(
+        user_name,
+        kind,
+        issue_id,
+        entries,
+        warnings,
+        fingerprint,
+        deletions=deletions,
+    )
 
 
 def _fingerprint(kind, config):
@@ -712,3 +734,189 @@ def test_target_fingerprint_is_canonical_and_scoped_to_destination_block():
 
     assert fingerprint_target_config(first, "redmine") == expected
     assert fingerprint_target_config(reordered, "redmine") == expected
+
+
+def test_plan_store_accepts_deletions_for_entry_dates():
+    store = PlanStore()
+    plan = _create_plan(
+        store,
+        "Oleg",
+        "redmine",
+        "42",
+        (_entry(),),
+        (),
+        deletions=(_deletion(),),
+    )
+
+    assert plan.deletions == (_deletion(),)
+
+
+def test_plan_store_rejects_deletion_for_unknown_date():
+    store = PlanStore()
+
+    with pytest.raises(ValueError, match="entry dates"):
+        _create_plan(
+            store,
+            "Oleg",
+            "redmine",
+            "42",
+            (_entry(),),
+            (),
+            deletions=(_deletion(day="2026-10-21"),),
+        )
+
+
+def test_writer_redmine_deletes_existing_entries_before_creating(tmp_path, monkeypatch):
+    path = tmp_path / "users.json"
+    config = {
+        "api_key": "redmine-secret",
+        "user_id": 17,
+        "activity_id": 9,
+        "comment": "development",
+    }
+    _write_users(
+        path,
+        [{"name": "Oleg", "is_enable": True, "redmine": config}],
+    )
+    store = PlanStore()
+    plan = _create_plan(
+        store,
+        "Oleg",
+        "redmine",
+        "42",
+        (_entry(),),
+        (),
+        _fingerprint("redmine", config),
+        deletions=(_deletion(),),
+    )
+    calls = []
+
+    class FakeTracker:
+        def delete_time_entries(self, entry_ids):
+            calls.append(("delete", list(entry_ids)))
+            return []
+
+        def create_worklogs(self, records):
+            calls.append(
+                ("create", [(record.date, record.hours) for record in records])
+            )
+            return []
+
+    monkeypatch.setattr(
+        "mcp_server.writer.build_user_tracker",
+        lambda *args, **kwargs: FakeTracker(),
+    )
+
+    result = execute_plan(plan, path)
+
+    assert calls == [
+        ("delete", [901]),
+        ("create", [("2026-10-20", 1.5)]),
+    ]
+    assert result == {
+        "results": [{"date": "2026-10-20", "issue": "42", "status": "created"}]
+    }
+    assert "redmine-secret" not in json.dumps(result)
+
+
+def test_writer_redmine_skips_creation_when_deletion_fails(tmp_path, monkeypatch):
+    path = tmp_path / "users.json"
+    config = {
+        "api_key": "redmine-secret",
+        "user_id": 17,
+        "activity_id": 9,
+        "comment": "development",
+    }
+    _write_users(
+        path,
+        [{"name": "Oleg", "is_enable": True, "redmine": config}],
+    )
+    store = PlanStore()
+    plan = _create_plan(
+        store,
+        "Oleg",
+        "redmine",
+        "42",
+        (
+            _entry(date="2026-10-20"),
+            _entry(date="2026-10-21", issue_id="42"),
+        ),
+        (),
+        _fingerprint("redmine", config),
+        deletions=(
+            _deletion(day="2026-10-20", entry_id=901),
+            _deletion(day="2026-10-21", entry_id=902),
+        ),
+    )
+    written = []
+
+    class FakeTracker:
+        def delete_time_entries(self, entry_ids):
+            return [(901, "denied")]
+
+        def create_worklogs(self, records):
+            written.append([record.date for record in records])
+            return []
+
+    monkeypatch.setattr(
+        "mcp_server.writer.build_user_tracker",
+        lambda *args, **kwargs: FakeTracker(),
+    )
+
+    result = execute_plan(plan, path)
+
+    assert written == [["2026-10-21"]]
+    assert result == {
+        "results": [
+            {"date": "2026-10-20", "issue": "42", "status": "failed"},
+            {"date": "2026-10-21", "issue": "42", "status": "created"},
+        ]
+    }
+
+
+def test_write_tool_approval_form_shows_deletion_count(tmp_path):
+    path = tmp_path / "users.json"
+    _write_users(
+        path,
+        [{"name": "Oleg", "is_enable": True, "redmine": {
+            "api_key": "redmine-secret",
+            "user_id": 17,
+            "activity_id": 9,
+            "comment": "development",
+        }}],
+    )
+    store = PlanStore()
+    plan = _create_plan(
+        store,
+        "Oleg",
+        "redmine",
+        "42",
+        (_entry(),),
+        (),
+        deletions=(_deletion(), _deletion(entry_id=902, hours=2.5)),
+    )
+    messages = []
+
+    async def elicitation_callback(context, params):
+        messages.append(params.message)
+        return types.ElicitResult(action="decline")
+
+    async def call():
+        async with Client(
+            create_server(
+                path,
+                write_store=store,
+                write_executor=lambda _plan: {},
+            ),
+            mode="legacy",
+            elicitation_callback=elicitation_callback,
+        ) as client:
+            return await client.call_tool(
+                "write_plan", {"plan_id": plan.plan_id}
+            )
+
+    asyncio.run(call())
+
+    assert len(messages) == 1
+    assert "Будет удалено: 2 старых записей (4 ч)" in messages[0]
+    assert "redmine-secret" not in messages[0]

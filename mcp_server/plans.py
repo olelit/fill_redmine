@@ -16,6 +16,13 @@ class PlanError(Exception):
 
 
 @dataclass(frozen=True)
+class PlannedDeletion:
+    date: str
+    entry_id: int
+    hours: float
+
+
+@dataclass(frozen=True)
 class PlannedEntry:
     date: str
     hours: float
@@ -37,10 +44,12 @@ class WritePlan:
     warnings: tuple[str, ...]
     target_fingerprint: str = field(repr=False)
     created_at: float
+    deletions: tuple[PlannedDeletion, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "entries", tuple(self.entries))
         object.__setattr__(self, "warnings", tuple(self.warnings))
+        object.__setattr__(self, "deletions", tuple(self.deletions))
 
 
 def plan_entry_issue(plan: WritePlan, entry: PlannedEntry) -> str:
@@ -72,11 +81,18 @@ class PlanStore:
         entries: tuple[PlannedEntry, ...],
         warnings: tuple[str, ...],
         target_fingerprint: str,
+        deletions: tuple[PlannedDeletion, ...] = (),
     ) -> WritePlan:
         entries = tuple(entries)
+        deletions = tuple(deletions)
         keys = {(entry.date, (entry.issue_id or issue_id).strip()) for entry in entries}
         if len(keys) != len(entries):
             raise ValueError("Plan entries must have unique dates and issues")
+        entry_dates = {entry.date for entry in entries}
+        if any(deletion.date not in entry_dates for deletion in deletions):
+            raise ValueError("Plan deletions must reference entry dates")
+        if len({deletion.entry_id for deletion in deletions}) != len(deletions):
+            raise ValueError("Plan deletions must have unique entry IDs")
         plan = WritePlan(
             plan_id=secrets.token_urlsafe(24),
             user_name=user_name,
@@ -86,6 +102,7 @@ class PlanStore:
             warnings=tuple(warnings),
             target_fingerprint=target_fingerprint,
             created_at=time.monotonic(),
+            deletions=deletions,
         )
         with self._lock:
             self._plans[plan.plan_id] = plan

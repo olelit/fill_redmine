@@ -52,9 +52,19 @@ def _approval_message(plan: WritePlan) -> str:
         f"Пользователь: {plan.user_name}",
         f"Трекер: {tracker}",
         f"Период: {period}",
-        f"Предупреждений: {len(plan.warnings)}",
-        "Подробный план выведен в чате.",
     ]
+    if plan.deletions:
+        deleted_hours = sum(deletion.hours for deletion in plan.deletions)
+        lines.append(
+            f"Будет удалено: {len(plan.deletions)} старых записей "
+            f"({deleted_hours:g} ч)"
+        )
+    lines.extend(
+        [
+            f"Предупреждений: {len(plan.warnings)}",
+            "Подробный план выведен в чате.",
+        ]
+    )
     return "\n".join(lines)
 
 
