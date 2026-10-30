@@ -48,10 +48,6 @@ class GitClient:
         if inside != "true":
             raise GitError("Это не git-репозиторий")
 
-    def get_config_email(self) -> str:
-        self.validate()
-        return self._run("config", "user.email").strip()
-
     def list_commits(
         self, email: str, start: date, end: date
     ) -> list[GitCommitDTO]:

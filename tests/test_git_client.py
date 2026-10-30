@@ -121,10 +121,6 @@ def test_filters_by_author_date_not_committer_date(repo):
     assert [commit.subject for commit in commits] == ["rebased"]
 
 
-def test_get_config_email(repo):
-    assert GitClient(repo).get_config_email() == "oleg@example.com"
-
-
 def test_empty_email_raises(repo):
     with pytest.raises(GitError, match="email"):
         GitClient(repo).list_commits("", date(2026, 10, 1), date(2026, 10, 2))

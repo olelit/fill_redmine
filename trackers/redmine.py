@@ -2,7 +2,7 @@ from datetime import date
 
 from clients.redmine_client import RedmineClient
 from dto.worklog_dto import WorklogDTO
-from trackers.base import BaseTracker, TrackerField
+from trackers.base import BaseTracker
 from trackers.registry import register_tracker
 
 
@@ -11,12 +11,6 @@ class RedmineTracker(BaseTracker):
     kind = "redmine"
     label = "Redmine"
     can_write = True
-    fields = (
-        TrackerField("api_key", "API key", kind="secret"),
-        TrackerField("user_id", "user_id", kind="int"),
-        TrackerField("activity_id", "activity_id", kind="int"),
-        TrackerField("issue_id", "issue_id", kind="int"),
-    )
 
     def get_time_entries(self, start: date, end: date) -> list[dict]:
         client = RedmineClient(api_key=self.config["api_key"])

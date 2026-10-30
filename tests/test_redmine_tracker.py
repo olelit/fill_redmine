@@ -73,11 +73,6 @@ def test_tracker_maps_worklogs():
     assert worklogs[0].source == "redmine"
 
 
-def test_tracker_is_configured():
-    assert RedmineTracker({"api_key": "key", "user_id": 1, "activity_id": 2, "issue_id": 3}).is_configured()
-    assert not RedmineTracker({}).is_configured()
-
-
 def test_tracker_is_registered():
     from trackers.registry import get_tracker_class
 

@@ -86,13 +86,6 @@ def test_tracker_aggregates_minutes_by_day_and_issue():
     assert all(w.source == "youtrack" for w in worklogs)
 
 
-def test_tracker_is_configured():
-    assert YoutrackTracker(
-        {"access_token": "token", "issue_id": "PROJ-1"}
-    ).is_configured()
-    assert not YoutrackTracker({}).is_configured()
-
-
 def test_tracker_is_registered():
     from trackers.registry import get_tracker_class
 

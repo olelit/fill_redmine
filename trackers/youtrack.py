@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 
 from clients.youtrack_client import YoutrackClient
 from dto.worklog_dto import WorklogDTO
-from trackers.base import BaseTracker, TrackerField
+from trackers.base import BaseTracker
 from trackers.registry import register_tracker
 
 
@@ -11,10 +11,6 @@ class YoutrackTracker(BaseTracker):
     kind = "youtrack"
     label = "YouTrack"
     can_write = True
-    fields = (
-        TrackerField("access_token", "Access token", kind="secret"),
-        TrackerField("issue_id", "Issue ID"),
-    )
 
     def get_worklogs(self, start: date, end: date) -> list[WorklogDTO]:
         client = YoutrackClient(access_token=self.config["access_token"])
