@@ -26,7 +26,10 @@ chmod 600 config/users.json
   `redmine.comment`;
 - `youtrack.access_token`;
 - `youtrack.issue_id` — fallback issue для дозаполнения YouTrack;
-- `youtrack.daily_meeting_issue_id`, `youtrack.daily_meeting_hours`.
+- `youtrack.daily_meeting_issue_id`, `youtrack.daily_meeting_hours`;
+- `youtrack.workday_start` — начало рабочего дня, по умолчанию `09:00`;
+- `youtrack.default_comment` — комментарий fallback-записи, по умолчанию
+  `development`.
 
 AI-ключи не нужны: сервер не вызывает модели.
 
@@ -64,7 +67,7 @@ opencode mcp list   # work-assistant connected
 
 ## Tools
 
-Сервер отдаёт ровно шесть tools, без prompts и resources:
+Сервер отдаёт ровно семь tools, без prompts и resources:
 
 | Tool | Назначение |
 | --- | --- |
@@ -72,6 +75,7 @@ opencode mcp list   # work-assistant connected
 | `get_worklogs` | worklogs профиля за период |
 | `get_git_commits` | коммиты профиля за период |
 | `prepare_youtrack_fill` | план дозаполнения YouTrack по коммитам |
+| `prepare_youtrack_from_commits` | план дня по коммитам, по умолчанию сегодня |
 | `prepare_youtrack_transfer` | план переноса YouTrack → Redmine |
 | `write_plan` | запись плана после подтверждения |
 
@@ -90,6 +94,30 @@ subject/body коммита. Daily meeting использует
 умолчанию `1.0`) в рабочие дни. `youtrack.issue_id` — fallback для дня без
 коммитов. Часы положительные, кратны `0.5`, сумма с уже записанными за день не
 больше 8. Даты work item'ов пишутся по UTC-полуночи.
+
+### Трекинг дня по коммитам
+
+`prepare_youtrack_from_commits(user_name, repo_path, start, end, daily_hours)`
+строит план YouTrack из git-коммитов. Без `start` и `end` берётся только
+сегодня; `daily_hours` по умолчанию `8.0` и должен быть положительным, не
+больше 8.
+
+Для каждого дня:
+
+1. Из целевых часов вычитаются уже записанные за этот день часы YouTrack.
+2. Daily meeting добавляется отдельной записью, если он настроен, день рабочий
+   и ещё не записан; его часы вычитаются из остатка.
+3. Остаток распределяется по issue из subject/body коммитов пропорционально
+   интервалам: вес коммита — время от предыдущего коммита (или от
+   `youtrack.workday_start`) до текущего. Если issue в коммите несколько, вес
+   делится между ними поровну.
+4. Часы округляются до `0.5`, сумма равна доступному остатку. Комментарий —
+   subject последнего коммита по issue.
+5. Если коммитов нет или в них нет issue, используется `youtrack.issue_id` с
+   комментарием `youtrack.default_comment`.
+
+`prepare_*` ничего не пишет: запись выполняется только через `write_plan` после
+подтверждения.
 
 ### Перенос YouTrack → Redmine
 

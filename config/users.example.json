@@ -14,7 +14,9 @@
         "access_token": "",
         "issue_id": "",
         "daily_meeting_issue_id": "",
-        "daily_meeting_hours": 1.0
+        "daily_meeting_hours": 1.0,
+        "workday_start": "09:00",
+        "default_comment": "development"
       }
     }
   ]

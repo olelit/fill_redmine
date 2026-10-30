@@ -4,10 +4,11 @@ This file provides guidance for agents working on this codebase.
 
 ## Project Overview
 
-Work Assistant is a local MCP stdio server for time tracking. It reads worklogs
-from Redmine and YouTrack and commits from git, builds write plans, and writes
-hours only after explicit MCP elicitation approval. GUI and CLI entry points
-have been removed; MCP is the only supported interface. It uses:
+Work Assistant (`work-assistant`) is a local MCP stdio server for time
+tracking. It reads worklogs from Redmine and YouTrack and commits from git,
+builds write plans, and writes hours only after explicit MCP elicitation
+approval. GUI and CLI entry points have been removed; MCP is the only supported
+interface. It uses:
 
 - `mcp` for the local stdio server;
 - `requests` for sync HTTP requests;
@@ -16,7 +17,7 @@ have been removed; MCP is the only supported interface. It uses:
 ## Project Structure
 
 ```text
-fill_redmine/
+work-assistant/
 ├── mcp_server/              # Local stdio MCP server
 │   ├── __main__.py          # `python -m mcp_server`
 │   ├── app.py               # create_server: tool registration
@@ -25,6 +26,8 @@ fill_redmine/
 │   ├── read_tools.py        # get_worklogs, get_git_commits
 │   ├── tracker_access.py    # profile -> tracker construction
 │   ├── youtrack_tools.py    # prepare_youtrack_fill
+│   ├── commit_allocation.py # commit intervals -> issue hours
+│   ├── commit_tools.py      # prepare_youtrack_from_commits
 │   ├── transfer_tools.py    # prepare_youtrack_transfer
 │   ├── periods.py           # period parsing
 │   ├── plans.py             # one-time write plans
@@ -140,18 +143,36 @@ Use f-strings, 4 spaces, max 100 characters per line.
 
 ## MCP Server
 
-`mcp_server/` exposes exactly six tools and no prompts/resources:
+`mcp_server/` exposes exactly seven tools and no prompts/resources:
 
 - `list_enabled_users` — enabled profile names and tracker kinds;
 - `get_worklogs` — worklogs for one profile and period;
 - `get_git_commits` — commits for one profile and period;
 - `prepare_youtrack_fill` — builds a per-issue YouTrack plan, never writes;
+- `prepare_youtrack_from_commits` — builds a per-day YouTrack plan from commit
+  intervals, today by default, never writes;
 - `prepare_youtrack_transfer` — builds a YouTrack → Redmine plan, never writes;
 - `write_plan` — executes a plan only after explicit elicitation approval.
 
 Flow is read → prepare → `write_plan` approval. Plans are one-time, in-memory
 and expire after 10 minutes. Missing approval, unknown/replayed/expired plans
 and clients without elicitation support return `{"status": "blocked"}`.
+
+Commit-based tracking rules:
+
+- Any request to track time from commits ("затрекай сегодня", "заполни по
+  коммитам", a day or period derived from git history) MUST use
+  `prepare_youtrack_from_commits`. Never allocate hours to issues manually and
+  never call `prepare_youtrack_fill` for that.
+- "Today" means no `start`/`end`; the tool defaults to today only.
+- Default target is `daily_hours=8.0` per day; pass a smaller positive value
+  only when the user asks for fewer hours.
+- Hours are allocated proportionally to intervals between commit times, starting
+  at `youtrack.workday_start` (default `09:00`). Existing YouTrack hours are
+  subtracted from the target; the daily meeting is added automatically.
+- No commits or no issue tags fall back to `youtrack.issue_id` with
+  `youtrack.default_comment` (default `development`).
+- The tool never writes; writing still requires `write_plan` approval.
 
 YouTrack fill rules:
 
@@ -208,5 +229,5 @@ and tokens from `config/users.json`.
 
 1. Run `.venv/bin/pytest -q`.
 2. Update the MCP tests when changing tool contracts.
-3. Keep the catalog at six tools, no prompts/resources/instructions.
+3. Keep the catalog at seven tools, no prompts/resources/instructions.
 4. Each task ends with green tests and its own commit.
