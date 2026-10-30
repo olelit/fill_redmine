@@ -5,8 +5,8 @@ YouTrack, git-коммиты), ИИ-план и запись часов в вы�
 CLI больше нет — всё делается в графическом окне.
 
 В репозитории также есть локальный MCP-сервер (`mcp_server/`) для работы из
-OpenCode: он читает worklogs и коммиты, готовит план и пишет часы в YouTrack
-только после явного подтверждения.
+OpenCode: он читает worklogs и коммиты, готовит план, пишет часы в YouTrack и
+переносит их в Redmine только после явного подтверждения.
 
 ## Установка
 
@@ -98,7 +98,7 @@ bash scripts/install_desktop.sh
 провайдеру. Ключи в интерфейсе маскируются, в SQLite хранятся открытым
 текстом (файл БД создаётся с правами `600`).
 
-## MCP-сервер (YouTrack fill)
+## MCP-сервер (worklogs)
 
 `mcp_server/` — локальный stdio MCP-сервер. Он использует те же трекеры и
 `GitClient`, что и GUI, но не пишет ничего без подтверждения через MCP
@@ -109,7 +109,7 @@ elicitation.
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-cp .env.example .env                 # нужен YOUTRACK_BASE_URL
+cp .env.example .env                 # нужны YOUTRACK_BASE_URL и REDMINE_BASE_URL
 cp config/users.example.json config/users.json
 chmod 600 config/users.json
 ```
@@ -123,10 +123,14 @@ chmod 600 config/users.json
 - `youtrack.daily_meeting_issue_id` — issue для daily meeting;
 - `youtrack.daily_meeting_hours` — часы daily meeting (по умолчанию `1.0`);
 - `youtrack.issue_id` — необязательный fallback, если строка плана не задаёт
-  issue.
+  issue;
+- `redmine.api_key` — API-ключ Redmine;
+- `redmine.user_id` — ID пользователя Redmine;
+- `redmine.activity_id` — ID activity для time entry;
+- `redmine.comment` — обязательный комментарий, например `development`.
 
-AI-ключи серверу не нужны: он не вызывает модели. Redmine-сценарии в этой
-фазе не реализованы (Redmine остаётся только в GUI).
+AI-ключи серверу не нужны: он не вызывает модели. Redmine используется для
+чтения и перезаписи time entries, YouTrack — как источник worklog'ов.
 
 ### Подключение к OpenCode
 
@@ -156,7 +160,7 @@ opencode mcp list   # work-assistant connected
 
 ### Tools и порядок работы
 
-Сервер отдаёт ровно пять tools, без prompts и resources:
+Сервер отдаёт ровно шесть tools, без prompts и resources:
 
 | Tool | Назначение |
 | --- | --- |
@@ -164,6 +168,7 @@ opencode mcp list   # work-assistant connected
 | `get_worklogs` | worklogs профиля за период |
 | `get_git_commits` | коммиты профиля за период |
 | `prepare_youtrack_fill` | собрать план YouTrack из коммитов и worklogs |
+| `prepare_youtrack_transfer` | собрать план переноса YouTrack → Redmine |
 | `write_plan` | записать план после подтверждения |
 
 Порядок: **read → prepare → `write_plan` approval**.
@@ -189,6 +194,19 @@ Daily meeting — 1 час на `youtrack.daily_meeting_issue_id` в кажды�
 предупреждений. Подробный план по датам агент печатает в чате до вызова
 `write_plan`; огромный JSON в форму не попадает. Даты work item'ов пишутся по
 UTC-полуночи, чтобы не сдвигаться на предыдущий день.
+
+### Перенос YouTrack → Redmine
+
+`prepare_youtrack_transfer(user_name, issue_id, start, end)` читает worklog'и
+YouTrack, суммирует часы по датам и готовит одну запись Redmine на дату в
+указанный `issue_id`. `issue_id` обязателен в каждом вызове и не берётся из
+JSON. Период по умолчанию — с 1-го числа текущего месяца по сегодня.
+
+Комментарий всегда равен `redmine.comment` (например, `development`); задачи
+YouTrack в комментарий не попадают. Если за дату уже есть Redmine-записи этого
+пользователя, все они будут удалены после подтверждения и заменены одной новой
+записью. Даты без worklog'ов YouTrack не трогаются. Форма `write_plan`
+показывает количество и часы удаляемых записей.
 
 ## Миграция со старой базы
 

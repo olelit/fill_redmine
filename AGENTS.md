@@ -8,7 +8,8 @@ Work Assistant is a Python/Tkinter GUI for tracking time across projects. It
 reads worklogs from tracker sources (Redmine, YouTrack, git commits), builds a
 tracking report (optionally with AI help) and writes the approved hours to a
 destination tracker. A local MCP server exposes the same trackers and git
-client to OpenCode for per-issue YouTrack fill. It uses:
+client to OpenCode for per-issue YouTrack fill and YouTrack → Redmine transfer.
+It uses:
 
 - `tkinter` for the GUI
 - `requests` for sync HTTP requests
@@ -60,6 +61,8 @@ fill_redmine/
 │   ├── read_tools.py        # get_worklogs, get_git_commits
 │   ├── tracker_access.py    # profile -> tracker construction
 │   ├── youtrack_tools.py    # prepare_youtrack_fill
+│   ├── transfer_tools.py    # prepare_youtrack_transfer
+│   ├── periods.py           # default and explicit period parsing
 │   ├── plans.py             # one-time write plans
 │   ├── write_tools.py       # write_plan approval gate
 │   └── writer.py            # approved plan execution
@@ -236,13 +239,15 @@ response.raise_for_status()
 
 ## MCP Server
 
-`mcp_server/` is a local stdio server for OpenCode. It exposes exactly five
+`mcp_server/` is a local stdio server for OpenCode. It exposes exactly six
 tools and no prompts/resources:
 
 - `list_enabled_users` — enabled profile names and tracker kinds only;
 - `get_worklogs` — worklogs for one profile and period;
 - `get_git_commits` — commits for one profile and period;
 - `prepare_youtrack_fill` — builds a per-issue YouTrack plan, never writes;
+- `prepare_youtrack_transfer` — builds a YouTrack → Redmine transfer plan,
+  never writes;
 - `write_plan` — executes a plan only after explicit elicitation approval.
 
 Flow is read → prepare → `write_plan` approval:
@@ -272,8 +277,23 @@ YouTrack fill rules:
   local midnight, so the date does not shift to the previous day.
 - Hours are positive multiples of `0.5`; proposed plus existing daily hours
   must not exceed 8.
-- Redmine MCP scenarios are not implemented in this phase; Redmine remains
-  GUI-only. The server needs no AI keys.
+
+YouTrack → Redmine transfer rules:
+
+- `prepare_youtrack_transfer` accepts a required positive Redmine `issue_id`;
+  the ID is never read from JSON or SQLite.
+- Period defaults to the 1st of the current month through today.
+- Worklogs are summed per date; one Redmine entry is created per date.
+- The Redmine comment is exactly `redmine.comment`; source issue IDs are never
+  appended.
+- For every source date, all of the user's existing Redmine time entries are
+  recorded and deleted after approval, then replaced by the new entry. Dates
+  without YouTrack worklogs are left untouched.
+- `prepare_youtrack_transfer` performs no POST/DELETE. `write_plan` performs
+  all deletions and creations only after explicit approval.
+- If deletion fails for a date, no new entry is created for that date; other
+  dates still proceed.
+- The server needs no AI keys.
 
 Security rules:
 
@@ -291,7 +311,7 @@ Security rules:
 - Document required variables in `.env.example`
 
 Required variables:
-- `REDMINE_BASE_URL` — Redmine instance URL (GUI only)
+- `REDMINE_BASE_URL` — Redmine instance URL (GUI and MCP server)
 - `YOUTRACK_BASE_URL` — YouTrack instance URL (GUI and MCP server)
 - `WORK_ASSISTANT_DB` — optional path to the SQLite database
   (`FILL_REDMINE_DB` is still accepted as a legacy alias)
@@ -306,5 +326,5 @@ in env. The MCP server reads profiles and tokens from `config/users.json`.
 3. If adding ruff, run `ruff check . && ruff format .` before committing
 4. Each task ends with green tests and its own commit
 
-The MCP catalog is asserted in `tests/test_mcp_server.py` (five tools, no
+The MCP catalog is asserted in `tests/test_mcp_server.py` (six tools, no
 prompts/resources/instructions). Keep it in sync when adding tools.
