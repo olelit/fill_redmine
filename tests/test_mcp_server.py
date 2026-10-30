@@ -12,7 +12,7 @@ def _write_users(path: Path, users: list[dict[str, object]]) -> None:
     path.write_text(json.dumps({"users": users}), encoding="utf-8")
 
 
-def test_list_enabled_users_only_returns_names_and_configured_trackers(tmp_path, monkeypatch):
+def test_list_enabled_users_only_returns_names_and_trackers(tmp_path, monkeypatch):
     path = tmp_path / "users.json"
     _write_users(
         path,

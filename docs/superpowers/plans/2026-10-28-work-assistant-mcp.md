@@ -505,7 +505,8 @@ Expected: PASS. Commit as `feat: prepare agent-proposed YouTrack completion`.
 
 **Interfaces:**
 - README documents local setup, `config/users.json`, `.env` tracker URLs, the three scenarios, mandatory Redmine issue IDs, approval form, and the fact that AI runs in the agent.
-- Project `AGENTS.md` describes the MCP entry point while GUI removal remains a later step.
+- Project `AGENTS.md` describes the MCP entry point; the GUI and non-MCP code
+  were removed in `2026-10-30-mcp-only-cleanup.md`.
 
 - [ ] **Step 1: Add an MCP catalog integration test**
 
@@ -526,4 +527,6 @@ Commit as `docs: document Work Assistant MCP setup` (include any final catalog a
 
 ## Phase 2 gate
 
-Do not execute `2026-10-28-work-assistant-gui-removal.md` until all Task 1-8 checks pass and the MCP workflows have been verified through a host without performing unapproved live writes.
+This gate was superseded: `2026-10-30-mcp-only-cleanup.md` removed the GUI and
+non-MCP code after Tasks 1-8 passed and the MCP workflows were verified through
+a host without performing unapproved live writes.
