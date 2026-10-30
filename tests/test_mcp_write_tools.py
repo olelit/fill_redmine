@@ -868,10 +868,76 @@ def test_writer_redmine_skips_creation_when_deletion_fails(tmp_path, monkeypatch
     assert written == [["2026-10-21"]]
     assert result == {
         "results": [
-            {"date": "2026-10-20", "issue": "42", "status": "failed"},
+            {
+                "date": "2026-10-20",
+                "issue": "42",
+                "status": "failed",
+                "reason": "delete_failed",
+            },
             {"date": "2026-10-21", "issue": "42", "status": "created"},
         ]
     }
+
+
+def test_writer_redmine_marks_create_failure_after_successful_deletion(tmp_path, monkeypatch):
+    path = tmp_path / "users.json"
+    config = {
+        "api_key": "redmine-secret",
+        "user_id": 17,
+        "activity_id": 9,
+        "comment": "development",
+    }
+    _write_users(
+        path,
+        [{"name": "Oleg", "is_enable": True, "redmine": config}],
+    )
+    store = PlanStore()
+    plan = _create_plan(
+        store,
+        "Oleg",
+        "redmine",
+        "42",
+        (
+            _entry(date="2026-10-20"),
+            _entry(date="2026-10-21", issue_id="42"),
+        ),
+        (),
+        _fingerprint("redmine", config),
+        deletions=(
+            _deletion(day="2026-10-20", entry_id=901),
+            _deletion(day="2026-10-21", entry_id=902),
+        ),
+    )
+    deleted = []
+
+    class FakeTracker:
+        def delete_time_entries(self, entry_ids):
+            deleted.append(list(entry_ids))
+            return []
+
+        def create_worklogs(self, records):
+            return [("2026-10-21", "server exploded")]
+
+    monkeypatch.setattr(
+        "mcp_server.writer.build_user_tracker",
+        lambda *args, **kwargs: FakeTracker(),
+    )
+
+    result = execute_plan(plan, path)
+
+    assert deleted == [[901, 902]]
+    assert result == {
+        "results": [
+            {"date": "2026-10-20", "issue": "42", "status": "created"},
+            {
+                "date": "2026-10-21",
+                "issue": "42",
+                "status": "failed",
+                "reason": "create_failed",
+            },
+        ]
+    }
+    assert "redmine-secret" not in json.dumps(result)
 
 
 def test_write_tool_approval_form_shows_deletion_count(tmp_path):
@@ -918,5 +984,6 @@ def test_write_tool_approval_form_shows_deletion_count(tmp_path):
     asyncio.run(call())
 
     assert len(messages) == 1
+    assert "Трекер: Redmine (issue 42)" in messages[0]
     assert "Будет удалено: 2 старых записей (4 ч)" in messages[0]
     assert "redmine-secret" not in messages[0]

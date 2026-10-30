@@ -25,7 +25,7 @@ def _execute_redmine(plan: WritePlan, profile: UserProfile) -> dict[str, object]
         issue_id=_redmine_issue_id(plan.issue_id),
         for_write=True,
     )
-    failed_dates: set[str] = set()
+    failed_reasons: dict[str, str] = {}
     if plan.deletions:
         deletion_errors = tracker.delete_time_entries(
             [deletion.entry_id for deletion in plan.deletions]
@@ -33,33 +33,33 @@ def _execute_redmine(plan: WritePlan, profile: UserProfile) -> dict[str, object]
         failed_ids = {
             entry_id for entry_id, _message in deletion_errors
         }
-        failed_dates.update(
-            deletion.date
-            for deletion in plan.deletions
-            if deletion.entry_id in failed_ids
-        )
+        for deletion in plan.deletions:
+            if deletion.entry_id in failed_ids:
+                failed_reasons.setdefault(deletion.date, "delete_failed")
 
     records = [
         _record(plan, entry, plan.issue_id)
         for entry in plan.entries
-        if entry.date not in failed_dates
+        if entry.date not in failed_reasons
     ]
     if records:
         failures = tracker.create_worklogs(records)
-        failed_dates.update(
-            entry_date for entry_date, _message in failures
-        )
+        for entry_date, _message in failures:
+            failed_reasons.setdefault(entry_date, "create_failed")
 
-    return {
-        "results": [
-            {
-                "date": entry.date,
-                "issue": plan.issue_id,
-                "status": "failed" if entry.date in failed_dates else "created",
-            }
-            for entry in plan.entries
-        ]
-    }
+    results: list[dict[str, object]] = []
+    for entry in plan.entries:
+        reason = failed_reasons.get(entry.date)
+        result: dict[str, object] = {
+            "date": entry.date,
+            "issue": plan.issue_id,
+            "status": "failed" if reason else "created",
+        }
+        if reason:
+            result["reason"] = reason
+        results.append(result)
+
+    return {"results": results}
 
 
 def _execute_youtrack(plan: WritePlan, profile: UserProfile) -> dict[str, object]:

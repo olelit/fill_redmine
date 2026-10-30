@@ -293,6 +293,9 @@ YouTrack → Redmine transfer rules:
   all deletions and creations only after explicit approval.
 - If deletion fails for a date, no new entry is created for that date; other
   dates still proceed.
+- Deletion and creation are not transactional: if deletion succeeds but
+  creation fails, the old entry is already gone; the result is marked `failed`
+  with `create_failed`.
 - The server needs no AI keys.
 
 Security rules:

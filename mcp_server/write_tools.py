@@ -44,6 +44,8 @@ def _approval_message(plan: WritePlan) -> str:
     tracker = {"redmine": "Redmine", "youtrack": "YouTrack"}.get(
         plan.destination_kind, plan.destination_kind
     )
+    if plan.destination_kind == "redmine":
+        tracker = f"{tracker} (issue {plan.issue_id})"
     total = sum(entry.hours for entry in plan.entries)
     dates = [entry.date for entry in plan.entries]
     period = f"{min(dates)} — {max(dates)}" if dates else "—"
